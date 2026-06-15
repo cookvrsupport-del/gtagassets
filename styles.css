@@ -1207,3 +1207,244 @@ img { display: block; max-width: 100%; }
   font-weight: 800;
   color: var(--text-primary);
 }
+
+/* ─── Admin Menu Button ────────────────────────────────────── */
+.admin-menu-btn {
+  color: #ffcc00 !important;
+  border-top: 1px solid rgba(255,204,0,0.15);
+}
+.admin-menu-btn:hover {
+  background: rgba(255,204,0,0.1) !important;
+  color: #ffd633 !important;
+}
+
+/* ─── Announcement Banner ──────────────────────────────────── */
+.announcement-banner {
+  background: linear-gradient(135deg, #1a3a2a 0%, #0d2818 100%);
+  border-bottom: 2px solid var(--accent);
+  padding: 10px 20px;
+  position: relative;
+  z-index: 50;
+}
+.announcement-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.announcement-content svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.announcement-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.3rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.announcement-close:hover { color: var(--text-primary); }
+
+/* ─── Maintenance Overlay ──────────────────────────────────── */
+.maintenance-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 10, 8, 0.97);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.maintenance-overlay.hidden { display: none; }
+.maintenance-card {
+  text-align: center;
+  max-width: 500px;
+  padding: 60px 40px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--radius-lg);
+  background: var(--card-bg);
+}
+.maintenance-icon {
+  font-size: 4rem;
+  margin-bottom: 16px;
+}
+.maintenance-title {
+  font-size: 2rem;
+  font-weight: 900;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  letter-spacing: 0.05em;
+}
+.maintenance-message {
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+.maintenance-timer {
+  font-size: 0.85rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ─── Admin Modal ──────────────────────────────────────────── */
+.admin-modal {
+  max-width: 600px;
+  width: 90%;
+  padding: 32px;
+}
+.admin-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.4rem;
+  font-weight: 900;
+  color: #ffcc00;
+  margin-bottom: 24px;
+  letter-spacing: 0.03em;
+}
+.admin-section {
+  margin-bottom: 28px;
+}
+.admin-section:last-child { margin-bottom: 0; }
+.admin-section-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.admin-form-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.admin-input {
+  flex: 1;
+  padding: 10px 14px;
+  background: var(--bg-dark);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.admin-input:focus { border-color: var(--accent); }
+.admin-input::placeholder { color: var(--text-secondary); opacity: 0.6; }
+.admin-textarea {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-dark);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-family: inherit;
+  outline: none;
+  resize: vertical;
+  margin-bottom: 12px;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+.admin-textarea:focus { border-color: var(--accent); }
+.admin-duration-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.admin-duration-wrap label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.admin-duration-input {
+  width: 80px;
+  flex: none;
+}
+.btn-admin-post {
+  background: var(--accent);
+  color: #0b0f0e;
+  padding: 10px 20px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.btn-admin-post:hover { background: #d9ff5c; }
+.btn-admin-maintenance {
+  background: #ff6b35;
+  color: #fff;
+  padding: 10px 20px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.btn-admin-maintenance:hover { background: #ff8855; }
+.btn-admin-maintenance.active {
+  background: #44cc66;
+}
+.btn-admin-maintenance.active:hover { background: #55dd77; }
+.admin-announcements-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+.admin-announcement-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.03);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  font-size: 0.85rem;
+}
+.admin-announcement-item span {
+  flex: 1;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+.admin-announcement-item .admin-ann-time {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.admin-announcement-item .admin-ann-delete {
+  background: none;
+  border: none;
+  color: #ff4444;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0 4px;
+  line-height: 1;
+}
+.admin-announcement-item .admin-ann-delete:hover { color: #ff6666; }
+.admin-empty {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  opacity: 0.6;
+  text-align: center;
+  padding: 16px 0;
+}
+.admin-maintenance-status {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 8px;
+}
+.admin-maintenance-status.active {
+  color: #ff6b35;
+  font-weight: 600;
+}
