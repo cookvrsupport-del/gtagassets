@@ -161,8 +161,11 @@
       </div>
     </div>
 
-    <div class="asset-grid" id="assetGrid"></div>
+    <div class="asset-grid" id="assetGrid">
+      <!-- Cards injected by JS -->
+    </div>
 
+    <!-- Empty state -->
     <div class="empty-state" id="emptyState">
       <div class="empty-icon">📦</div>
       <h3>No assets yet</h3>
@@ -170,7 +173,7 @@
       <button class="btn btn-primary" id="emptyUploadBtn">Upload Asset</button>
     </div>
   </main>
-  </div>
+  </div><!-- /page-assets -->
 
   <!-- ============ PAGE: SOUNDS ============ -->
   <div id="page-sounds" class="page">
@@ -214,7 +217,7 @@
       <button class="btn btn-primary sounds-upload-btn">Upload Sound</button>
     </div>
   </main>
-  </div>
+  </div><!-- /page-sounds -->
 
   <!-- ============ PAGE: CREATORS ============ -->
   <div id="page-creators" class="page">
@@ -251,7 +254,7 @@
       <button class="btn btn-primary creators-upload-btn">Upload Asset</button>
     </div>
   </main>
-  </div>
+  </div><!-- /page-creators -->
 
   <!-- ============ ASSET DETAIL MODAL ============ -->
   <div class="modal-overlay" id="assetModal">
@@ -419,6 +422,299 @@
     </div>
   </footer>
 
-  <script src="app.js"></script>
+  <!-- Firebase SDK for cloud database (shared across all users) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+  <!-- Firebase config — fill in your values to enable cloud sync -->
+  <script>
+    window.FIREBASE_CONFIG = {
+      apiKey: "",
+      authDomain: "",
+      projectId: "",
+      storageBucket: "",
+      messagingSenderId: "",
+      appId: ""
+    };
+  </script>
+
+  <script>
+    // ============== APP.JS (INLINE FOR THIS RESPONSE) ==============
+    // Initialize Firebase
+    let db;
+    let currentUser = null;
+    let isAdmin = false;
+    let assets = [];
+    let maintenanceEnabled = false;
+    let maintenanceEndTime = null;
+
+    async function initFirebase() {
+      if (!window.FIREBASE_CONFIG.apiKey) {
+        console.warn("Firebase config not set. Using localStorage fallback.");
+        return false;
+      }
+      try {
+        firebase.initializeApp(window.FIREBASE_CONFIG);
+        db = firebase.firestore();
+        console.log("Firebase initialized successfully");
+        return true;
+      } catch (e) {
+        console.error("Firebase init failed", e);
+        return false;
+      }
+    }
+
+    // Trim username strictly (no leading/trailing spaces)
+    function normalizeUsername(name) {
+      return (name || "").trim().toLowerCase();
+    }
+
+    // Check if user is admin ("cook" exactly)
+    function checkAdmin(username) {
+      return normalizeUsername(username) === "cook";
+    }
+
+    // Load maintenance status from Firestore (public)
+    async function loadMaintenanceStatus() {
+      if (!db) return;
+      try {
+        const doc = await db.collection("siteSettings").doc("maintenance").get();
+        if (doc.exists) {
+          const data = doc.data();
+          maintenanceEnabled = data.enabled || false;
+          maintenanceEndTime = data.endTime ? new Date(data.endTime) : null;
+          const msgEl = document.getElementById("maintenanceMessage");
+          if (data.message) msgEl.textContent = data.message;
+          
+          if (maintenanceEnabled) {
+            document.getElementById("maintenanceOverlay").classList.remove("hidden");
+            startMaintenanceTimer();
+          } else {
+            document.getElementById("maintenanceOverlay").classList.add("hidden");
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load maintenance", e);
+      }
+    }
+
+    function startMaintenanceTimer() {
+      const timerEl = document.getElementById("maintenanceTimer");
+      const interval = setInterval(() => {
+        if (!maintenanceEndTime) {
+          clearInterval(interval);
+          return;
+        }
+        const now = Date.now();
+        const remaining = Math.max(0, Math.floor((maintenanceEndTime - now) / 1000));
+        if (remaining <= 0) {
+          clearInterval(interval);
+          maintenanceEnabled = false;
+          document.getElementById("maintenanceOverlay").classList.add("hidden");
+          return;
+        }
+        const min = Math.floor(remaining / 60);
+        const sec = remaining % 60;
+        timerEl.textContent = `${min}:${sec.toString().padStart(2, '0')}`;
+      }, 1000);
+    }
+
+    // Load all assets (shared)
+    async function loadAssets() {
+      const grid = document.getElementById("assetGrid");
+      grid.innerHTML = "";
+      
+      if (!db) {
+        // Fallback to localStorage for demo
+        assets = JSON.parse(localStorage.getItem("assets") || "[]");
+      } else {
+        try {
+          const snapshot = await db.collection("assets").orderBy("createdAt", "desc").get();
+          assets = [];
+          snapshot.forEach(doc => {
+            assets.push({ id: doc.id, ...doc.data() });
+          });
+        } catch (e) {
+          console.error("Failed to load assets from Firestore", e);
+          assets = [];
+        }
+      }
+
+      document.getElementById("heroCount").textContent = `${assets.length} ASSETS`;
+
+      if (assets.length === 0) {
+        document.getElementById("emptyState").style.display = "flex";
+      } else {
+        document.getElementById("emptyState").style.display = "none";
+        renderAssetCards();
+      }
+    }
+
+    function renderAssetCards(filteredAssets = assets) {
+      const grid = document.getElementById("assetGrid");
+      grid.innerHTML = "";
+      
+      filteredAssets.forEach(asset => {
+        const card = document.createElement("div");
+        card.className = "asset-card";
+        card.innerHTML = `
+          <div class="asset-image">
+            <img src="${asset.thumbnail || asset.fileUrl || 'https://via.placeholder.com/300x200'}" alt="${asset.name}">
+          </div>
+          <div class="asset-info">
+            <h3>${asset.name}</h3>
+            <p class="asset-creator">By ${asset.creator}</p>
+            <div class="asset-meta">
+              <span>${asset.downloads || 0} ↓</span>
+              <span>⭐ ${asset.rating || 0}</span>
+            </div>
+          </div>
+        `;
+        card.addEventListener("click", () => showAssetDetail(asset));
+        grid.appendChild(card);
+      });
+    }
+
+    // Upload asset to shared Firestore
+    async function uploadAsset(assetData) {
+      if (!db) {
+        // Fallback
+        let localAssets = JSON.parse(localStorage.getItem("assets") || "[]");
+        localAssets.unshift(assetData);
+        localStorage.setItem("assets", JSON.stringify(localAssets));
+        showToast("Asset uploaded (local fallback)");
+        loadAssets();
+        return;
+      }
+
+      try {
+        await db.collection("assets").add({
+          ...assetData,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          downloads: 0,
+          rating: 0
+        });
+        showToast("Asset uploaded successfully!");
+        loadAssets();
+      } catch (e) {
+        console.error("Upload failed", e);
+        showToast("Upload failed. Try again.");
+      }
+    }
+
+    function showAssetDetail(asset) {
+      // ... (existing modal population logic)
+      document.getElementById("modalTitle").textContent = asset.name;
+      document.getElementById("modalCreator").innerHTML = `By <span>${asset.creator}</span>`;
+      document.getElementById("assetModal").classList.add("active");
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById("toast");
+      toast.textContent = msg;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 3000);
+    }
+
+    // Admin check on login
+    function handleLogin(username) {
+      currentUser = username;
+      isAdmin = checkAdmin(username);
+      
+      document.getElementById("userMenu").classList.remove("hidden");
+      document.getElementById("userMenuName").textContent = `@${username}`;
+      document.getElementById("adminMenuBtn").style.display = isAdmin ? "flex" : "none";
+      
+      showToast(`Signed in as @${username}`);
+    }
+
+    // Event Listeners
+    document.addEventListener("DOMContentLoaded", async () => {
+      const firebaseReady = await initFirebase();
+      
+      // Load shared data
+      await loadAssets();
+      await loadMaintenanceStatus();
+
+      // Upload form
+      const uploadForm = document.getElementById("uploadForm");
+      uploadForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const name = document.getElementById("assetName").value.trim();
+        const creator = document.getElementById("creatorNameInput").value.trim();
+        
+        if (!name || !creator) {
+          showToast("Name and creator are required");
+          return;
+        }
+
+        const assetData = {
+          name,
+          creator,
+          category: document.getElementById("assetCategory").value,
+          description: document.getElementById("assetDesc").value,
+          tags: document.getElementById("assetTags").value.split(",").map(t => t.trim()),
+        };
+
+        await uploadAsset(assetData);
+        document.getElementById("uploadModal").classList.remove("active");
+        uploadForm.reset();
+      });
+
+      // Sign in
+      document.getElementById("signinForm").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const username = document.getElementById("signinName").value.trim();
+        if (username) handleLogin(username);
+      });
+
+      // Admin menu (only exact "cook")
+      document.getElementById("adminMenuBtn").addEventListener("click", () => {
+        document.getElementById("adminModal").classList.add("active");
+      });
+
+      // Maintenance toggle (admin only)
+      document.getElementById("adminMaintenanceToggle").addEventListener("click", async () => {
+        if (!isAdmin) return;
+        const enabled = !maintenanceEnabled;
+        const msg = document.getElementById("adminMaintenanceMsg").value;
+        const duration = parseInt(document.getElementById("adminMaintenanceDuration").value) || 30;
+        
+        if (!db) {
+          showToast("Maintenance control requires Firebase");
+          return;
+        }
+
+        try {
+          const endTime = new Date(Date.now() + duration * 60000);
+          await db.collection("siteSettings").doc("maintenance").set({
+            enabled,
+            message: msg,
+            endTime: endTime.toISOString()
+          });
+          maintenanceEnabled = enabled;
+          maintenanceEndTime = endTime;
+          showToast(enabled ? "Maintenance enabled" : "Maintenance disabled");
+          await loadMaintenanceStatus();
+        } catch (e) {
+          console.error(e);
+        }
+      });
+
+      // Close modals
+      document.querySelectorAll(".modal-close").forEach(btn => {
+        btn.addEventListener("click", () => {
+          btn.closest(".modal-overlay").classList.remove("active");
+        });
+      });
+
+      // Open upload
+      document.getElementById("openUploadBtn").addEventListener("click", () => {
+        document.getElementById("uploadModal").classList.add("active");
+      });
+
+      console.log("%c✅ gtagassets fixed: Shared Firestore + strict admin + public maintenance", "color: lime; font-weight: bold");
+    });
+  </script>
 </body>
 </html>
