@@ -41,6 +41,10 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               My Profile
             </button>
+            <button class="user-dropdown-item admin-menu-btn" id="adminMenuBtn" style="display:none;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Admin Menu
+            </button>
             <button class="user-dropdown-item user-dropdown-signout" id="signOutBtn">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
               Sign Out
@@ -50,6 +54,66 @@
       </div>
     </div>
   </header>
+
+  <!-- ============ ANNOUNCEMENT BANNER ============ -->
+  <div class="announcement-banner hidden" id="announcementBanner">
+    <div class="announcement-content">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      <span id="announcementText"></span>
+      <button class="announcement-close" id="announcementClose">&times;</button>
+    </div>
+  </div>
+
+  <!-- ============ MAINTENANCE OVERLAY ============ -->
+  <div class="maintenance-overlay hidden" id="maintenanceOverlay">
+    <div class="maintenance-card">
+      <div class="maintenance-icon">🔧</div>
+      <h1 class="maintenance-title">Under Maintenance</h1>
+      <p class="maintenance-message" id="maintenanceMessage">We'll be back shortly!</p>
+      <p class="maintenance-timer" id="maintenanceTimer"></p>
+    </div>
+  </div>
+
+  <!-- ============ ADMIN PANEL MODAL ============ -->
+  <div class="modal-overlay" id="adminModal">
+    <div class="modal admin-modal">
+      <button class="modal-close" id="closeAdminModal">&times;</button>
+      <h2 class="admin-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Admin Panel
+      </h2>
+
+      <!-- Announcements Section -->
+      <div class="admin-section">
+        <h3 class="admin-section-title">Announcements</h3>
+        <div class="admin-form-row">
+          <input type="text" class="admin-input" id="adminAnnouncementInput" placeholder="Type an announcement..." maxlength="200" />
+          <button class="btn btn-admin-post" id="adminPostAnnouncementBtn">Post</button>
+        </div>
+        <div class="admin-announcements-list" id="adminAnnouncementsList">
+          <p class="admin-empty">No announcements yet.</p>
+        </div>
+      </div>
+
+      <!-- Maintenance Section -->
+      <div class="admin-section">
+        <h3 class="admin-section-title">Maintenance Mode</h3>
+        <div class="admin-maintenance-form">
+          <textarea class="admin-textarea" id="adminMaintenanceMsg" placeholder="Custom maintenance message..." rows="2">We'll be back shortly!</textarea>
+          <div class="admin-form-row">
+            <div class="admin-duration-wrap">
+              <label>Duration (minutes):</label>
+              <input type="number" class="admin-input admin-duration-input" id="adminMaintenanceDuration" value="30" min="1" max="1440" />
+            </div>
+            <button class="btn btn-admin-maintenance" id="adminMaintenanceToggle">
+              <span id="adminMaintenanceBtnText">Enable Maintenance</span>
+            </button>
+          </div>
+          <p class="admin-maintenance-status" id="adminMaintenanceStatus"></p>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- ============ PAGE: ASSETS ============ -->
   <div id="page-assets" class="page active">
@@ -357,6 +421,22 @@
       <p class="footer-copy">&copy; 2026 gtagassets.com — Not affiliated with Gorilla Tag.</p>
     </div>
   </footer>
+
+  <!-- Firebase SDK for cloud database (shared across all users) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+  <!-- Firebase config — fill in your values to enable cloud sync -->
+  <script>
+    window.FIREBASE_CONFIG = {
+      apiKey: "",
+      authDomain: "",
+      projectId: "",
+      storageBucket: "",
+      messagingSenderId: "",
+      appId: ""
+    };
+  </script>
 
   <script src="app.js"></script>
 </body>
