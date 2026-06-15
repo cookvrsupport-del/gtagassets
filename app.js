@@ -42,21 +42,161 @@ let creatorsSearch = '';
 let creatorsSort = 'uploads';
 let activePage = 'assets';
 
+// Admin state
+let ANNOUNCEMENTS = [];           // [{ text, createdAt }]
+let MAINTENANCE = null;           // { message, endsAt } or null
+let maintenanceTimer = null;      // interval ID for countdown
+
+// ─── Cloud Database (Firebase Firestore) ─────────────────────
+let CLOUD_DB = null;
+
+function initCloudDB() {
+  try {
+    const cfg = window.FIREBASE_CONFIG;
+    if (cfg && cfg.projectId && typeof firebase !== 'undefined') {
+      if (!firebase.apps.length) firebase.initializeApp(cfg);
+      CLOUD_DB = firebase.firestore();
+      console.log('[Cloud] Firestore connected — cloud sync enabled');
+    } else {
+      console.log('[Cloud] No Firebase config — using local-only mode');
+    }
+  } catch (e) {
+    console.warn('[Cloud] Firebase init failed:', e);
+    CLOUD_DB = null;
+  }
+}
+
+async function cloudGetAssets() {
+  if (!CLOUD_DB) return null;
+  const snap = await CLOUD_DB.collection('assets').orderBy('createdAt', 'desc').get();
+  return snap.docs.map(d => ({ ...d.data(), id: d.id }));
+}
+
+async function cloudPutAsset(asset) {
+  if (!CLOUD_DB) return;
+  await CLOUD_DB.collection('assets').doc(asset.id).set(asset);
+}
+
+async function cloudDeleteAsset(id) {
+  if (!CLOUD_DB) return;
+  await CLOUD_DB.collection('assets').doc(id).delete();
+}
+
+async function cloudGetAccounts() {
+  if (!CLOUD_DB) return null;
+  const snap = await CLOUD_DB.collection('accounts').get();
+  const map = {};
+  snap.docs.forEach(d => { map[d.id] = d.data(); });
+  return map;
+}
+
+async function cloudPutAccount(key, account) {
+  if (!CLOUD_DB) return;
+  await CLOUD_DB.collection('accounts').doc(key).set(account);
+}
+
+async function cloudPutFollowers(followers) {
+  if (!CLOUD_DB) return;
+  await CLOUD_DB.collection('meta').doc('followers').set(followers);
+}
+
+async function cloudGetFollowers() {
+  if (!CLOUD_DB) return null;
+  const doc = await CLOUD_DB.collection('meta').doc('followers').get();
+  return doc.exists ? doc.data() : {};
+}
+
+async function cloudPutRatings(ratings) {
+  if (!CLOUD_DB) return;
+  await CLOUD_DB.collection('meta').doc('ratings').set(ratings);
+}
+
+async function cloudGetRatings() {
+  if (!CLOUD_DB) return null;
+  const doc = await CLOUD_DB.collection('meta').doc('ratings').get();
+  return doc.exists ? doc.data() : {};
+}
+
+// Admin cloud helpers
+async function cloudGetAnnouncements() {
+  if (!CLOUD_DB) return null;
+  const doc = await CLOUD_DB.collection('meta').doc('announcements').get();
+  return doc.exists ? (doc.data().list || []) : [];
+}
+
+async function cloudPutAnnouncements(list) {
+  if (!CLOUD_DB) return;
+  await CLOUD_DB.collection('meta').doc('announcements').set({ list });
+}
+
+async function cloudGetMaintenance() {
+  if (!CLOUD_DB) return null;
+  const doc = await CLOUD_DB.collection('meta').doc('maintenance').get();
+  return doc.exists ? doc.data().state : null;
+}
+
+async function cloudPutMaintenance(state) {
+  if (!CLOUD_DB) return;
+  await CLOUD_DB.collection('meta').doc('maintenance').set({ state: state });
+}
+
 // ─── Persistence ─────────────────────────────────────────────
-function loadState() {
+async function loadState() {
+  // Always load localStorage first (fast)
   try {
     ASSETS = JSON.parse(localStorage.getItem('gtaga_assets') || '[]');
     CURRENT_USER = JSON.parse(localStorage.getItem('gtaga_user') || 'null');
     FOLLOWERS = JSON.parse(localStorage.getItem('gtaga_followers') || '{}');
     userRatings = JSON.parse(localStorage.getItem('gtaga_ratings') || '{}');
     ACCOUNTS = JSON.parse(localStorage.getItem('gtaga_accounts') || '{}');
+    ANNOUNCEMENTS = JSON.parse(localStorage.getItem('gtaga_announcements') || '[]');
+    MAINTENANCE = JSON.parse(localStorage.getItem('gtaga_maintenance') || 'null');
   } catch (e) {
     ASSETS = []; CURRENT_USER = null; FOLLOWERS = {}; userRatings = {}; ACCOUNTS = {};
+    ANNOUNCEMENTS = []; MAINTENANCE = null;
   }
+
+  // Init cloud database
+  initCloudDB();
+
+  // If cloud is available, load shared data (overwrites local)
+  if (CLOUD_DB) {
+    try {
+      const [cloudAssets, cloudAccounts, cloudFollowers, cloudRatings, cloudAnnouncements, cloudMaintenance] = await Promise.all([
+        cloudGetAssets(),
+        cloudGetAccounts(),
+        cloudGetFollowers(),
+        cloudGetRatings(),
+        cloudGetAnnouncements(),
+        cloudGetMaintenance()
+      ]);
+      if (cloudAssets && cloudAssets.length > 0) ASSETS = cloudAssets;
+      if (cloudAccounts && Object.keys(cloudAccounts).length > 0) ACCOUNTS = cloudAccounts;
+      if (cloudFollowers && Object.keys(cloudFollowers).length > 0) FOLLOWERS = cloudFollowers;
+      if (cloudRatings && Object.keys(cloudRatings).length > 0) userRatings = cloudRatings;
+      if (cloudAnnouncements) ANNOUNCEMENTS = cloudAnnouncements;
+      if (cloudMaintenance !== undefined) MAINTENANCE = cloudMaintenance;
+      // Save cloud data to localStorage as cache
+      localStorage.setItem('gtaga_assets', JSON.stringify(ASSETS));
+      localStorage.setItem('gtaga_accounts', JSON.stringify(ACCOUNTS));
+      localStorage.setItem('gtaga_followers', JSON.stringify(FOLLOWERS));
+      localStorage.setItem('gtaga_ratings', JSON.stringify(userRatings));
+      localStorage.setItem('gtaga_announcements', JSON.stringify(ANNOUNCEMENTS));
+      localStorage.setItem('gtaga_maintenance', JSON.stringify(MAINTENANCE));
+      console.log('[Cloud] Loaded', ASSETS.length, 'assets from cloud');
+    } catch (e) {
+      console.warn('[Cloud] Failed to load from cloud, using local data:', e);
+    }
+  }
+
   // Clear file cache on reload
   fileDataCache = {};
   // Migrate old assets with embedded fileData to IndexedDB
   migrateFileData();
+
+  // Check and display maintenance mode or announcements
+  checkMaintenanceMode();
+  showLatestAnnouncement();
 }
 
 // Migrate old localStorage fileData to IndexedDB (runs once)
@@ -77,16 +217,54 @@ async function migrateFileData() {
     }
   }
   if (migrated) {
-    saveAssets();
+    await saveAssets();
     console.log('File data migration complete - localStorage freed');
   }
 }
 
-function saveAssets() { localStorage.setItem('gtaga_assets', JSON.stringify(ASSETS)); }
-function saveUser()   { localStorage.setItem('gtaga_user', JSON.stringify(CURRENT_USER)); }
-function saveFollowers() { localStorage.setItem('gtaga_followers', JSON.stringify(FOLLOWERS)); }
-function saveRatings() { localStorage.setItem('gtaga_ratings', JSON.stringify(userRatings)); }
-function saveAccounts() { localStorage.setItem('gtaga_accounts', JSON.stringify(ACCOUNTS)); }
+async function saveAssets() {
+  localStorage.setItem('gtaga_assets', JSON.stringify(ASSETS));
+  // Sync each new/changed asset to cloud
+  if (CLOUD_DB) {
+    try {
+      const promises = ASSETS.slice(0, 50).map(a => cloudPutAsset(a));
+      await Promise.all(promises);
+    } catch (e) {
+      console.warn('[Cloud] Failed to sync assets:', e);
+    }
+  }
+}
+
+function saveUser() {
+  localStorage.setItem('gtaga_user', JSON.stringify(CURRENT_USER));
+}
+
+async function saveFollowers() {
+  localStorage.setItem('gtaga_followers', JSON.stringify(FOLLOWERS));
+  if (CLOUD_DB) {
+    try { await cloudPutFollowers(FOLLOWERS); } catch (e) { console.warn('[Cloud] followers sync failed:', e); }
+  }
+}
+
+async function saveRatings() {
+  localStorage.setItem('gtaga_ratings', JSON.stringify(userRatings));
+  if (CLOUD_DB) {
+    try { await cloudPutRatings(userRatings); } catch (e) { console.warn('[Cloud] ratings sync failed:', e); }
+  }
+}
+
+async function saveAccounts() {
+  localStorage.setItem('gtaga_accounts', JSON.stringify(ACCOUNTS));
+  if (CLOUD_DB) {
+    try {
+      for (const [key, acc] of Object.entries(ACCOUNTS)) {
+        await cloudPutAccount(key, acc);
+      }
+    } catch (e) {
+      console.warn('[Cloud] accounts sync failed:', e);
+    }
+  }
+}
 
 // ─── IndexedDB for File Data (unlimited storage) ─────────────
 const fileDB = {
@@ -536,7 +714,9 @@ async function handleDownload(id) {
   if (!asset) return;
 
   asset.downloads++;
-  saveAssets();
+  // Save locally and sync download count to cloud
+  localStorage.setItem('gtaga_assets', JSON.stringify(ASSETS));
+  try { await cloudPutAsset(asset); } catch (e) { /* silent */ }
 
   // Load file data from cache or IndexedDB
   let fileData = fileDataCache[id] || null;
@@ -570,18 +750,13 @@ async function handleDownload(id) {
 
 // ─── Delete Asset ────────────────────────────────────────────
 function isAdmin() {
-  const result = CURRENT_USER && CURRENT_USER.name.toLowerCase() === 'cook';
-  console.log('[isAdmin] user:', CURRENT_USER?.name, '-> is admin:', result);
-  return result;
+  return CURRENT_USER && CURRENT_USER.name.toLowerCase() === 'cook';
 }
 
 function canDeleteAsset(asset) {
   if (!CURRENT_USER) return false;
-  const admin = isAdmin();
-  const isCreator = asset.creator.toLowerCase() === CURRENT_USER.name.toLowerCase();
-  console.log('[canDeleteAsset] user:', CURRENT_USER.name, 'creator:', asset.creator, 'admin:', admin, 'isCreator:', isCreator);
-  if (admin) return true;
-  return isCreator;
+  if (isAdmin()) return true;
+  return asset.creator.toLowerCase() === CURRENT_USER.name.toLowerCase();
 }
 
 async function deleteAsset(id) {
@@ -615,6 +790,9 @@ async function deleteAsset(id) {
   ASSETS = ASSETS.filter(a => a.id !== id);
   saveAssets();
 
+  // Also delete from cloud database
+  try { await cloudDeleteAsset(id); } catch (e) { console.warn('[Cloud] delete failed:', e); }
+
   // Close modal and refresh
   closeAllModals();
   renderGrid();
@@ -624,7 +802,7 @@ async function deleteAsset(id) {
 }
 
 // ─── Rating ──────────────────────────────────────────────────
-function handleRate(assetId, stars) {
+async function handleRate(assetId, stars) {
   if (!CURRENT_USER) { showToast('Sign in to rate assets', 'error'); openSigninModal(); return; }
   userRatings[assetId] = stars;
   saveRatings();
@@ -638,7 +816,9 @@ function handleRate(assetId, stars) {
   asset.allRatings = asset.allRatings.filter(r => r.user !== CURRENT_USER.name);
   asset.allRatings.push({ user: CURRENT_USER.name, stars });
   asset.rating = asset.allRatings.reduce((s, r) => s + r.stars, 0) / asset.allRatings.length;
-  saveAssets();
+  // Save rating to cloud
+  try { await cloudPutAsset(asset); } catch (e) { console.warn('[Cloud] rating sync failed:', e); }
+  localStorage.setItem('gtaga_assets', JSON.stringify(ASSETS));
 
   // Update stars visually
   document.querySelectorAll('#starRating .star').forEach(s => {
@@ -650,7 +830,7 @@ function handleRate(assetId, stars) {
 }
 
 // ─── Follow ──────────────────────────────────────────────────
-function handleFollow() {
+async function handleFollow() {
   if (!CURRENT_USER) { showToast('Sign in to follow creators', 'error'); closeAllModals(); openSigninModal(); return; }
   if (!selectedCreator) return;
   const key = selectedCreator.toLowerCase();
@@ -665,7 +845,7 @@ function handleFollow() {
     FOLLOWERS[key].splice(idx, 1);
     msg = 'Unfollowed @' + selectedCreator;
   }
-  saveFollowers();
+  await saveFollowers();
   // Refresh modal
   openCreatorModal(selectedCreator);
   showToast(msg, 'success');
@@ -713,7 +893,15 @@ async function handleUpload(e) {
     };
 
     ASSETS.unshift(newAsset);
-    saveAssets();
+    // Save to localStorage immediately
+    localStorage.setItem('gtaga_assets', JSON.stringify(ASSETS));
+    // Sync new asset to cloud database
+    try {
+      await cloudPutAsset(newAsset);
+      console.log('[Cloud] Uploaded asset synced:', newAsset.name);
+    } catch (e) {
+      console.warn('[Cloud] Failed to sync upload:', e);
+    }
 
     // Reset form
     resetUploadForm();
@@ -833,14 +1021,18 @@ function hideAuthError() {
 function updateAuthUI() {
   const signinBtn = document.getElementById('openSigninBtn');
   const userMenu = document.getElementById('userMenu');
+  const adminBtn = document.getElementById('adminMenuBtn');
   if (CURRENT_USER) {
     signinBtn.classList.add('hidden');
     userMenu.classList.remove('hidden');
     document.getElementById('userMenuAvatar').textContent = CURRENT_USER.name.charAt(0).toUpperCase();
     document.getElementById('userMenuName').textContent = '@' + CURRENT_USER.name;
+    // Show admin button only for cook
+    adminBtn.style.display = isAdmin() ? '' : 'none';
   } else {
     signinBtn.classList.remove('hidden');
     userMenu.classList.add('hidden');
+    adminBtn.style.display = 'none';
   }
 }
 
@@ -901,10 +1093,187 @@ function initCustomSelect() {
   });
 }
 
+// ─── Admin: Announcements ────────────────────────────────────
+function showLatestAnnouncement() {
+  const banner = document.getElementById('announcementBanner');
+  const textEl = document.getElementById('announcementText');
+  if (!ANNOUNCEMENTS || ANNOUNCEMENTS.length === 0) {
+    banner.classList.add('hidden');
+    return;
+  }
+  // Show the most recent announcement
+  const latest = ANNOUNCEMENTS[0];
+  textEl.textContent = latest.text;
+  banner.classList.remove('hidden');
+}
+
+function hideAnnouncement() {
+  document.getElementById('announcementBanner').classList.add('hidden');
+}
+
+async function postAnnouncement() {
+  if (!isAdmin()) return;
+  const input = document.getElementById('adminAnnouncementInput');
+  const text = input.value.trim();
+  if (!text) { showToast('Enter an announcement message', 'error'); return; }
+
+  ANNOUNCEMENTS.unshift({ text, createdAt: Date.now() });
+  // Keep max 20 announcements
+  if (ANNOUNCEMENTS.length > 20) ANNOUNCEMENTS = ANNOUNCEMENTS.slice(0, 20);
+
+  localStorage.setItem('gtaga_announcements', JSON.stringify(ANNOUNCEMENTS));
+  try { await cloudPutAnnouncements(ANNOUNCEMENTS); } catch (e) { console.warn('[Cloud] announcements sync:', e); }
+
+  input.value = '';
+  renderAdminAnnouncements();
+  showLatestAnnouncement();
+  showToast('Announcement posted!', 'success');
+}
+
+async function deleteAnnouncement(index) {
+  if (!isAdmin()) return;
+  ANNOUNCEMENTS.splice(index, 1);
+  localStorage.setItem('gtaga_announcements', JSON.stringify(ANNOUNCEMENTS));
+  try { await cloudPutAnnouncements(ANNOUNCEMENTS); } catch (e) { console.warn('[Cloud] announcements sync:', e); }
+  renderAdminAnnouncements();
+  showLatestAnnouncement();
+}
+
+function renderAdminAnnouncements() {
+  const list = document.getElementById('adminAnnouncementsList');
+  if (!ANNOUNCEMENTS || ANNOUNCEMENTS.length === 0) {
+    list.innerHTML = '<p class="admin-empty">No announcements yet.</p>';
+    return;
+  }
+  list.innerHTML = ANNOUNCEMENTS.map((ann, i) => {
+    const timeStr = new Date(ann.createdAt).toLocaleDateString();
+    return `<div class="admin-announcement-item">
+      <span>${escapeHTML(ann.text)}</span>
+      <span class="admin-ann-time">${timeStr}</span>
+      <button class="admin-ann-delete" data-index="${i}" title="Delete">&times;</button>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('.admin-ann-delete').forEach(btn => {
+    btn.addEventListener('click', () => deleteAnnouncement(parseInt(btn.dataset.index)));
+  });
+}
+
+// ─── Admin: Maintenance Mode ─────────────────────────────────
+function checkMaintenanceMode() {
+  const overlay = document.getElementById('maintenanceOverlay');
+  if (!MAINTENANCE || !MAINTENANCE.endsAt) {
+    overlay.classList.add('hidden');
+    if (maintenanceTimer) { clearInterval(maintenanceTimer); maintenanceTimer = null; }
+    return;
+  }
+
+  // Check if maintenance has expired
+  const now = Date.now();
+  if (now >= MAINTENANCE.endsAt) {
+    // Maintenance expired — clear it
+    MAINTENANCE = null;
+    localStorage.setItem('gtaga_maintenance', 'null');
+    cloudPutMaintenance(null).catch(() => {});
+    overlay.classList.add('hidden');
+    return;
+  }
+
+  // Show maintenance overlay
+  document.getElementById('maintenanceMessage').textContent = MAINTENANCE.message || "We'll be back shortly!";
+  overlay.classList.remove('hidden');
+  startMaintenanceCountdown();
+}
+
+function startMaintenanceCountdown() {
+  if (maintenanceTimer) clearInterval(maintenanceTimer);
+  const timerEl = document.getElementById('maintenanceTimer');
+
+  function updateTimer() {
+    if (!MAINTENANCE || !MAINTENANCE.endsAt) {
+      clearInterval(maintenanceTimer);
+      document.getElementById('maintenanceOverlay').classList.add('hidden');
+      return;
+    }
+    const remaining = MAINTENANCE.endsAt - Date.now();
+    if (remaining <= 0) {
+      clearInterval(maintenanceTimer);
+      MAINTENANCE = null;
+      localStorage.setItem('gtaga_maintenance', 'null');
+      cloudPutMaintenance(null).catch(() => {});
+      document.getElementById('maintenanceOverlay').classList.add('hidden');
+      updateAdminMaintenanceUI();
+      return;
+    }
+    const mins = Math.floor(remaining / 60000);
+    const secs = Math.floor((remaining % 60000) / 1000);
+    timerEl.textContent = 'Estimated return: ' + mins + 'm ' + secs + 's';
+  }
+
+  updateTimer();
+  maintenanceTimer = setInterval(updateTimer, 1000);
+}
+
+async function toggleMaintenance() {
+  if (!isAdmin()) return;
+
+  if (MAINTENANCE && MAINTENANCE.endsAt) {
+    // Disable maintenance
+    MAINTENANCE = null;
+    localStorage.setItem('gtaga_maintenance', 'null');
+    try { await cloudPutMaintenance(null); } catch (e) { console.warn('[Cloud] maintenance sync:', e); }
+    if (maintenanceTimer) { clearInterval(maintenanceTimer); maintenanceTimer = null; }
+    document.getElementById('maintenanceOverlay').classList.add('hidden');
+    updateAdminMaintenanceUI();
+    showToast('Maintenance mode disabled', 'success');
+  } else {
+    // Enable maintenance
+    const message = document.getElementById('adminMaintenanceMsg').value.trim() || "We'll be back shortly!";
+    const duration = parseInt(document.getElementById('adminMaintenanceDuration').value) || 30;
+    const endsAt = Date.now() + (duration * 60 * 1000);
+
+    MAINTENANCE = { message, endsAt };
+    localStorage.setItem('gtaga_maintenance', JSON.stringify(MAINTENANCE));
+    try { await cloudPutMaintenance(MAINTENANCE); } catch (e) { console.warn('[Cloud] maintenance sync:', e); }
+
+    checkMaintenanceMode();
+    updateAdminMaintenanceUI();
+    showToast('Maintenance mode enabled for ' + duration + ' minutes', 'success');
+  }
+}
+
+function updateAdminMaintenanceUI() {
+  const btn = document.getElementById('adminMaintenanceToggle');
+  const btnText = document.getElementById('adminMaintenanceBtnText');
+  const status = document.getElementById('adminMaintenanceStatus');
+
+  if (MAINTENANCE && MAINTENANCE.endsAt && Date.now() < MAINTENANCE.endsAt) {
+    btnText.textContent = 'Disable Maintenance';
+    btn.classList.add('active');
+    const remaining = MAINTENANCE.endsAt - Date.now();
+    const mins = Math.floor(remaining / 60000);
+    status.textContent = 'Active — ' + mins + ' minutes remaining';
+    status.className = 'admin-maintenance-status active';
+  } else {
+    btnText.textContent = 'Enable Maintenance';
+    btn.classList.remove('active');
+    status.textContent = '';
+    status.className = 'admin-maintenance-status';
+  }
+}
+
+// ─── Admin Panel ─────────────────────────────────────────────
+function openAdminPanel() {
+  if (!isAdmin()) { showToast('Access denied', 'error'); return; }
+  renderAdminAnnouncements();
+  updateAdminMaintenanceUI();
+  openModal('adminModal');
+}
+
 // ─── Init ────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   console.log('[gtagassets] Initializing...');
-  loadState();
+  await loadState();
   renderGrid();
   renderSoundsGrid();
   renderCreatorsGrid();
@@ -998,7 +1367,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ── Auth form (sign in / sign up) ──
-  document.getElementById('signinForm').addEventListener('submit', (e) => {
+  document.getElementById('signinForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('signinName').value.trim();
     const password = document.getElementById('signinPassword').value;
@@ -1015,7 +1384,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       ACCOUNTS[key] = { name, passHash };
-      saveAccounts();
+      await saveAccounts();
       CURRENT_USER = { name };
       saveUser();
       updateAuthUI();
@@ -1102,6 +1471,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── Follow button ──
   document.getElementById('followBtn').addEventListener('click', handleFollow);
+
+  // ── Admin panel ──
+  document.getElementById('adminMenuBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!isAdmin()) return;
+    // Close the user dropdown first
+    document.getElementById('userMenu').classList.remove('open');
+    openAdminPanel();
+  });
+  document.getElementById('closeAdminModal').addEventListener('click', () => closeAllModals());
+  document.getElementById('adminPostAnnouncementBtn').addEventListener('click', postAnnouncement);
+  document.getElementById('adminAnnouncementInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); postAnnouncement(); }
+  });
+  document.getElementById('adminMaintenanceToggle').addEventListener('click', toggleMaintenance);
+  document.getElementById('announcementClose').addEventListener('click', hideAnnouncement);
 
   // ── Sounds page controls ──
   document.querySelectorAll('.sound-cat-pill').forEach(pill => {
