@@ -570,13 +570,18 @@ async function handleDownload(id) {
 
 // ─── Delete Asset ────────────────────────────────────────────
 function isAdmin() {
-  return CURRENT_USER && CURRENT_USER.name.toLowerCase() === 'cook';
+  const result = CURRENT_USER && CURRENT_USER.name.toLowerCase() === 'cook';
+  console.log('[isAdmin] user:', CURRENT_USER?.name, '-> is admin:', result);
+  return result;
 }
 
 function canDeleteAsset(asset) {
   if (!CURRENT_USER) return false;
-  if (isAdmin()) return true;
-  return asset.creator.toLowerCase() === CURRENT_USER.name.toLowerCase();
+  const admin = isAdmin();
+  const isCreator = asset.creator.toLowerCase() === CURRENT_USER.name.toLowerCase();
+  console.log('[canDeleteAsset] user:', CURRENT_USER.name, 'creator:', asset.creator, 'admin:', admin, 'isCreator:', isCreator);
+  if (admin) return true;
+  return isCreator;
 }
 
 async function deleteAsset(id) {
