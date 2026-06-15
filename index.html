@@ -1,1529 +1,861 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>gtagassets.com — Free Assets for Gorilla Tag Creators</title>
-  <link rel="stylesheet" href="styles.css" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@700;800&display=swap" rel="stylesheet" />
-</head>
-<body>
+// ============ FIREBASE SETUP ============
+let db = null;
+let currentUser = null;
+let adminSettingsListener = null;
+let assetsListener = null;
+let announcementsListener = null;
 
-  <header class="site-header">
-    <div class="header-inner">
-      <a href="#" class="logo">
-        <span class="logo-icon">&#x1F98D;</span>
-        <span class="logo-text">gtag<span class="logo-accent">assets</span></span>
-      </a>
-      <nav class="main-nav">
-        <a href="#" class="nav-link active" data-page="assets">ASSETS</a>
-        <a href="#" class="nav-link" data-page="sounds">SOUNDS</a>
-        <a href="#" class="nav-link" data-page="creators">CREATORS</a>
-      </nav>
-      <div class="header-actions">
-        <button class="btn btn-upload-header" id="openUploadBtn">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          UPLOAD
-        </button>
-        <button class="btn btn-signin" id="openSigninBtn">SIGN IN</button>
-        <div class="user-menu hidden" id="userMenu">
-          <button class="user-menu-trigger" id="userMenuTrigger">
-            <span class="user-menu-avatar" id="userMenuAvatar">U</span>
-            <span class="user-menu-name" id="userMenuName">@User</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-          <div class="user-dropdown" id="userDropdown">
-            <button class="user-dropdown-item" id="viewProfileBtn">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              My Profile
-            </button>
-            <button class="user-dropdown-item admin-menu-btn" id="adminMenuBtn" style="display:none;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              Admin Menu
-            </button>
-            <button class="user-dropdown-item user-dropdown-signout" id="signOutBtn">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </header>
+function initFirebase() {
+  if (!window.FIREBASE_CONFIG || !window.FIREBASE_CONFIG.apiKey) {
+    console.warn('Firebase config not provided — using localStorage fallback');
+    return;
+  }
+  firebase.initializeApp(window.FIREBASE_CONFIG);
+  db = firebase.firestore();
+}
 
-  <div class="announcement-banner hidden" id="announcementBanner">
-    <div class="announcement-content">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-      <span id="announcementText"></span>
-      <button class="announcement-close" id="announcementClose">&times;</button>
-    </div>
-  </div>
+// ============ UTILITY FUNCTIONS ============
+function normaliseUsername(name) {
+  return (name || '').trim().toLowerCase();
+}
 
-  <div class="maintenance-overlay hidden" id="maintenanceOverlay">
-    <div class="maintenance-card">
-      <div class="maintenance-icon">&#x1F527;</div>
-      <h1 class="maintenance-title">Under Maintenance</h1>
-      <p class="maintenance-message" id="maintenanceMessage">We'll be back shortly!</p>
-      <p class="maintenance-timer" id="maintenanceTimer"></p>
-    </div>
-  </div>
+function isAdmin(username) {
+  return normaliseUsername(username) === 'cook';
+}
 
-  <div class="modal-overlay" id="adminModal">
-    <div class="modal admin-modal">
-      <button class="modal-close" id="closeAdminModal">&times;</button>
-      <h2 class="admin-title">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        Admin Panel
-      </h2>
-      <div class="admin-section">
-        <h3 class="admin-section-title">Announcements</h3>
-        <div class="admin-form-row">
-          <input type="text" class="admin-input" id="adminAnnouncementInput" placeholder="Type an announcement..." maxlength="200" />
-          <button class="btn btn-admin-post" id="adminPostAnnouncementBtn">Post</button>
-        </div>
-        <div class="admin-announcements-list" id="adminAnnouncementsList">
-          <p class="admin-empty">No announcements yet.</p>
-        </div>
-      </div>
-      <div class="admin-section">
-        <h3 class="admin-section-title">Maintenance Mode</h3>
-        <div class="admin-maintenance-form">
-          <textarea class="admin-textarea" id="adminMaintenanceMsg" placeholder="Custom maintenance message..." rows="2">We'll be back shortly!</textarea>
-          <div class="admin-form-row">
-            <div class="admin-duration-wrap">
-              <label>Duration (minutes):</label>
-              <input type="number" class="admin-input admin-duration-input" id="adminMaintenanceDuration" value="30" min="1" max="1440" />
-            </div>
-            <button class="btn btn-admin-maintenance" id="adminMaintenanceToggle">
-              <span id="adminMaintenanceBtnText">Enable Maintenance</span>
-            </button>
-          </div>
-          <p class="admin-maintenance-status" id="adminMaintenanceStatus"></p>
-        </div>
-      </div>
-    </div>
-  </div>
+function getEl(id) {
+  return document.getElementById(id);
+}
 
-  <div id="page-assets" class="page active">
-    <section class="hero">
-      <div class="hero-bg"></div>
-      <div class="hero-content">
-        <h1 class="hero-title" id="heroTitle">ASSETS</h1>
-        <p class="hero-count" id="heroCount">0 ASSETS</p>
-        <p class="hero-tagline">Overlays, thumbnails, logos, fonts, 3D models &amp; more. All free, all made for Gorilla Tag creators.</p>
-        <div class="search-wrap">
-          <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" class="search-input" id="searchInput" placeholder="Search assets..." />
-        </div>
-      </div>
-    </section>
-    <section class="categories-section">
-      <div class="categories-inner">
-        <button class="cat-pill active" data-cat="all">ALL</button>
-        <button class="cat-pill" data-cat="logos">LOGOS</button>
-        <button class="cat-pill" data-cat="fonts">FONTS</button>
-        <button class="cat-pill" data-cat="thumbnails">THUMBNAILS</button>
-        <button class="cat-pill" data-cat="overlays">OVERLAYS</button>
-        <button class="cat-pill" data-cat="3d-models">3D MODELS</button>
-        <button class="cat-pill" data-cat="sound-effects">SOUND EFFECTS</button>
-        <button class="cat-pill" data-cat="ui-assets">UI ASSETS</button>
-        <button class="cat-pill" data-cat="templates">TEMPLATES</button>
-        <button class="cat-pill" data-cat="sounds">SOUNDS</button>
-      </div>
-    </section>
-    <main class="main-content">
-      <div class="grid-header">
-        <h2 class="grid-title" id="gridTitle">All Assets</h2>
-        <div class="sort-wrap">
-          <label for="sortSelect">Sort:</label>
-          <select id="sortSelect">
-            <option value="newest">Newest</option>
-            <option value="popular">Most Downloaded</option>
-            <option value="rating">Top Rated</option>
-            <option value="name">Name A-Z</option>
-          </select>
-        </div>
-      </div>
-      <div class="asset-grid" id="assetGrid"></div>
-      <div class="empty-state" id="emptyState">
-        <div class="empty-icon">&#x1F4E6;</div>
-        <h3>No assets yet</h3>
-        <p>Be the first to upload an asset for the community!</p>
-        <button class="btn btn-primary" id="emptyUploadBtn">Upload Asset</button>
-      </div>
-    </main>
-  </div>
+function toggleClass(el, cls, force) {
+  if (!el) return;
+  if (force === undefined) {
+    el.classList.toggle(cls);
+  } else {
+    el.classList.toggle(cls, force);
+  }
+}
 
-  <div id="page-sounds" class="page">
-    <section class="hero">
-      <div class="hero-bg"></div>
-      <div class="hero-content">
-        <h1 class="hero-title">SOUNDS</h1>
-        <p class="hero-count" id="soundsCount">0 SOUNDS</p>
-        <p class="hero-tagline">Sound effects, music loops, and audio assets for your Gorilla Tag projects. All free to use.</p>
-        <div class="search-wrap">
-          <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" class="search-input" id="soundsSearchInput" placeholder="Search sounds..." />
-        </div>
-      </div>
-    </section>
-    <section class="categories-section">
-      <div class="categories-inner">
-        <button class="sound-cat-pill active" data-scat="all">ALL</button>
-        <button class="sound-cat-pill" data-scat="sound-effects">SOUND EFFECTS</button>
-        <button class="sound-cat-pill" data-scat="sounds">MUSIC &amp; LOOPS</button>
-      </div>
-    </section>
-    <main class="main-content">
-      <div class="grid-header">
-        <h2 class="grid-title" id="soundsGridTitle">All Sounds</h2>
-        <div class="sort-wrap">
-          <label for="soundsSortSelect">Sort:</label>
-          <select id="soundsSortSelect">
-            <option value="newest">Newest</option>
-            <option value="popular">Most Downloaded</option>
-            <option value="rating">Top Rated</option>
-            <option value="name">Name A-Z</option>
-          </select>
-        </div>
-      </div>
-      <div class="asset-grid" id="soundsGrid"></div>
-      <div class="empty-state" id="soundsEmptyState">
-        <div class="empty-icon">&#x1F50A;</div>
-        <h3>No sounds yet</h3>
-        <p>Upload sound effects and music for the community!</p>
-        <button class="btn btn-primary sounds-upload-btn">Upload Sound</button>
-      </div>
-    </main>
-  </div>
+function addClass(el, cls) {
+  if (el) el.classList.add(cls);
+}
 
-  <div id="page-creators" class="page">
-    <section class="hero">
-      <div class="hero-bg"></div>
-      <div class="hero-content">
-        <h1 class="hero-title">CREATORS</h1>
-        <p class="hero-count" id="creatorsCount">0 CREATORS</p>
-        <p class="hero-tagline">Discover the talented people making free assets for the Gorilla Tag community.</p>
-        <div class="search-wrap">
-          <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" class="search-input" id="creatorsSearchInput" placeholder="Search creators..." />
-        </div>
-      </div>
-    </section>
-    <main class="main-content">
-      <div class="grid-header">
-        <h2 class="grid-title">All Creators</h2>
-        <div class="sort-wrap">
-          <label for="creatorsSortSelect">Sort:</label>
-          <select id="creatorsSortSelect">
-            <option value="uploads">Most Uploads</option>
-            <option value="downloads">Most Downloads</option>
-            <option value="followers">Most Followers</option>
-            <option value="name">Name A-Z</option>
-          </select>
-        </div>
-      </div>
-      <div class="creators-grid" id="creatorsGrid"></div>
-      <div class="empty-state" id="creatorsEmptyState">
-        <div class="empty-icon">&#x1F464;</div>
-        <h3>No creators yet</h3>
-        <p>Be the first — upload an asset and become a creator!</p>
-        <button class="btn btn-primary creators-upload-btn">Upload Asset</button>
-      </div>
-    </main>
-  </div>
+function removeClass(el, cls) {
+  if (el) el.classList.remove(cls);
+}
 
-  <div class="modal-overlay" id="assetModal">
-    <div class="modal asset-detail-modal">
-      <button class="modal-close" id="closeAssetModal">&times;</button>
-      <div class="asset-detail">
-        <div class="asset-preview-large" id="modalPreview">
-          <div class="checkerboard"></div>
-        </div>
-        <div class="asset-info">
-          <h2 id="modalTitle">Asset Name</h2>
-          <p class="asset-creator" id="modalCreator">By <span>Creator</span></p>
-          <div class="asset-meta">
-            <span class="meta-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> <span id="modalDownloads">0</span> downloads</span>
-            <span class="meta-item">&#x2B50; <span id="modalRating">0</span></span>
-            <span class="meta-item" id="modalCategory">Category</span>
-            <span class="meta-item" id="modalFileType">PNG</span>
-          </div>
-          <p class="asset-desc" id="modalDesc">No description provided.</p>
-          <div class="asset-tags" id="modalTags"></div>
-          <button class="btn btn-download" id="modalDownloadBtn">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Download
-          </button>
-          <button class="btn btn-delete" id="modalDeleteBtn" style="display:none;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-            Delete Asset
-          </button>
-          <div class="asset-rating-section">
-            <p>Rate this asset:</p>
-            <div class="star-rating" id="starRating">
-              <span class="star" data-val="1">&#x2605;</span>
-              <span class="star" data-val="2">&#x2605;</span>
-              <span class="star" data-val="3">&#x2605;</span>
-              <span class="star" data-val="4">&#x2605;</span>
-              <span class="star" data-val="5">&#x2605;</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+function showToast(msg, duration = 3000) {
+  const toast = getEl('toast');
+  if (!toast) return;
+  toast.textContent = msg;
+  addClass(toast, 'show');
+  setTimeout(() => removeClass(toast, 'show'), duration);
+}
 
-  <div class="modal-overlay" id="creatorModal">
-    <div class="modal creator-modal">
-      <button class="modal-close" id="closeCreatorModal">&times;</button>
-      <div class="creator-profile">
-        <div class="creator-avatar" id="creatorAvatar">C</div>
-        <div class="creator-info">
-          <h2 id="creatorName">@Creator</h2>
-          <div class="creator-stats">
-            <div class="stat"><span id="creatorUploads">0</span><small>Uploads</small></div>
-            <div class="stat"><span id="creatorDownloads">0</span><small>Downloads</small></div>
-            <div class="stat"><span id="creatorFollowers">0</span><small>Followers</small></div>
-          </div>
-          <button class="btn btn-follow" id="followBtn">Follow</button>
-        </div>
-      </div>
-      <h3 class="creator-assets-title">Assets by <span id="creatorAssetsName">Creator</span></h3>
-      <div class="creator-assets-grid" id="creatorAssetsGrid"></div>
-    </div>
-  </div>
+function showModal(modalId) {
+  const modal = getEl(modalId);
+  if (modal) addClass(modal, 'active');
+}
 
-  <div class="modal-overlay" id="uploadModal">
-    <div class="modal upload-modal">
-      <button class="modal-close" id="closeUploadModal">&times;</button>
-      <h2>Upload Asset</h2>
-      <p class="upload-subtitle">Share your creation with the Gorilla Tag community</p>
-      <form id="uploadForm" novalidate>
-        <div class="form-group">
-          <label for="assetName">Asset Name *</label>
-          <input type="text" id="assetName" maxlength="60" placeholder="e.g. Epic Thumbnail Pack" />
-        </div>
-        <div class="form-group">
-          <label for="assetCategory">Category *</label>
-          <div class="custom-select" id="assetCategoryWrap">
-            <button type="button" class="custom-select-trigger" id="assetCategoryTrigger">
-              <span class="custom-select-value placeholder" id="assetCategoryLabel">Select category...</span>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-            <div class="custom-select-dropdown" id="assetCategoryDropdown">
-              <button type="button" class="custom-select-option" data-value="logos">Logos</button>
-              <button type="button" class="custom-select-option" data-value="fonts">Fonts</button>
-              <button type="button" class="custom-select-option" data-value="thumbnails">Thumbnails</button>
-              <button type="button" class="custom-select-option" data-value="overlays">Overlays</button>
-              <button type="button" class="custom-select-option" data-value="3d-models">3D Models</button>
-              <button type="button" class="custom-select-option" data-value="sound-effects">Sound Effects</button>
-              <button type="button" class="custom-select-option" data-value="ui-assets">UI Assets</button>
-              <button type="button" class="custom-select-option" data-value="templates">Templates</button>
-              <button type="button" class="custom-select-option" data-value="sounds">Sounds</button>
-            </div>
-            <input type="hidden" id="assetCategory" />
-          </div>
-        </div>
-        <div class="form-group">
-          <label for="assetDesc">Description</label>
-          <textarea id="assetDesc" rows="3" maxlength="300" placeholder="Describe your asset..."></textarea>
-        </div>
-        <div class="form-group">
-          <label for="assetTags">Tags (comma separated)</label>
-          <input type="text" id="assetTags" placeholder="e.g. gorilla, tag, thumbnail" />
-        </div>
-        <div class="form-group">
-          <label for="creatorNameInput">Your Name *</label>
-          <input type="text" id="creatorNameInput" maxlength="30" placeholder="@YourName" />
-        </div>
-        <div class="form-group file-drop">
-          <label>File *</label>
-          <div class="drop-zone" id="dropZone">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <p>Drag &amp; drop your file here or <span class="browse-link">browse</span></p>
-            <small>PNG, JPG, SVG, TTF, OTF, OBJ, FBX, WAV, MP3, ZIP (max 50MB)</small>
-            <input type="file" id="fileInput" hidden />
-          </div>
-          <div class="file-preview" id="filePreview" style="display:none">
-            <img id="filePreviewImg" src="" alt="preview" />
-            <span id="filePreviewName"></span>
-            <button type="button" class="btn-remove-file" id="removeFileBtn">&times;</button>
-          </div>
-        </div>
-        <button type="submit" class="btn btn-primary btn-submit">Upload Asset</button>
-      </form>
-    </div>
-  </div>
+function hideModal(modalId) {
+  const modal = getEl(modalId);
+  if (modal) removeClass(modal, 'active');
+}
 
-  <div class="modal-overlay" id="signinModal">
-    <div class="modal signin-modal">
-      <button class="modal-close" id="closeSigninModal">&times;</button>
-      <h2 id="authTitle">Welcome Back</h2>
-      <p class="signin-subtitle" id="authSubtitle">Sign in to upload, download, and follow</p>
-      <form id="signinForm" novalidate>
-        <div class="form-group">
-          <label for="signinName">Display Name</label>
-          <input type="text" id="signinName" placeholder="@YourName" maxlength="30" autocomplete="username" />
-        </div>
-        <div class="form-group">
-          <label for="signinPassword">Password</label>
-          <input type="password" id="signinPassword" placeholder="Enter password" maxlength="64" autocomplete="current-password" />
-        </div>
-        <div class="auth-error hidden" id="authError"></div>
-        <button type="submit" class="btn btn-primary btn-submit" id="authSubmitBtn">Sign In</button>
-      </form>
-      <div class="auth-toggle">
-        <span id="authToggleText">Don't have an account?</span>
-        <button type="button" class="auth-toggle-link" id="authToggleBtn">Sign Up</button>
-      </div>
-    </div>
-  </div>
+// ============ AUTHENTICATION ============
+function signIn(username, password) {
+  const normalisedUsername = normaliseUsername(username);
+  
+  if (!normalisedUsername || password.length < 1) {
+    showAuthError('Username and password required');
+    return;
+  }
 
-  <div class="toast" id="toast"></div>
+  const stored = localStorage.getItem(`user_${normalisedUsername}`);
+  if (!stored || JSON.parse(stored).password !== password) {
+    showAuthError('Invalid username or password');
+    return;
+  }
 
-  <footer class="site-footer">
-    <div class="footer-inner">
-      <div class="footer-brand">
-        <span class="logo-icon">&#x1F98D;</span>
-        <span class="logo-text">gtag<span class="logo-accent">assets</span>.com</span>
-      </div>
-      <p class="footer-text">Free assets for Gorilla Tag creators. Upload, download, and share.</p>
-      <p class="footer-copy">&copy; 2026 gtagassets.com — Not affiliated with Gorilla Tag.</p>
-    </div>
-  </footer>
+  currentUser = {
+    name: normalisedUsername,
+    isAdmin: isAdmin(normalisedUsername)
+  };
 
-  <!-- Firebase SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  localStorage.setItem('currentUser', JSON.stringify(currentUser));
+  hideModal('signinModal');
+  updateAuthUI();
+  showToast('Signed in successfully');
+  loadAssets();
+}
 
-  <script>
-    // ============================================================
-    //  FIREBASE CONFIG — fill in your project values
-    // ============================================================
-    const FIREBASE_CONFIG = {
-      apiKey: "",
-      authDomain: "",
-      projectId: "",
-      storageBucket: "",
-      messagingSenderId: "",
-      appId: ""
-    };
+function signUp(username, password) {
+  const normalisedUsername = normaliseUsername(username);
 
-    // ============================================================
-    //  FIREBASE INIT
-    // ============================================================
-    let db = null;
-    let firebaseReady = false;
+  if (!normalisedUsername || password.length < 1) {
+    showAuthError('Username and password required');
+    return;
+  }
 
-    (function initFirebase() {
-      try {
-        if (
-          FIREBASE_CONFIG.apiKey &&
-          FIREBASE_CONFIG.projectId &&
-          typeof firebase !== 'undefined'
-        ) {
-          firebase.initializeApp(FIREBASE_CONFIG);
-          db = firebase.firestore();
-          firebaseReady = true;
-          console.log('[Firebase] Connected to Firestore — all data is shared across devices.');
-        } else {
-          console.warn('[Firebase] No config provided — falling back to localStorage (local only).');
-        }
-      } catch (e) {
-        console.error('[Firebase] Init failed:', e);
-      }
-    })();
+  if (localStorage.getItem(`user_${normalisedUsername}`)) {
+    showAuthError('Username already taken');
+    return;
+  }
 
-    // ============================================================
-    //  CONSTANTS & HELPERS
-    // ============================================================
+  localStorage.setItem(`user_${normalisedUsername}`, JSON.stringify({ password }));
 
-    // ---- SECURITY FIX: normalise username before any comparison ----
-    // Trimming whitespace and lower-casing prevents " cook", "COOK",
-    // "cook ", etc. from bypassing the admin check.
-    function normaliseUsername(name) {
-      return (name || '').trim().toLowerCase();
+  currentUser = {
+    name: normalisedUsername,
+    isAdmin: isAdmin(normalisedUsername)
+  };
+
+  localStorage.setItem('currentUser', JSON.stringify(currentUser));
+  hideModal('signinModal');
+  updateAuthUI();
+  showToast('Account created and signed in');
+  loadAssets();
+}
+
+function signOut() {
+  currentUser = null;
+  localStorage.removeItem('currentUser');
+  updateAuthUI();
+  showToast('Signed out');
+  loadAssets();
+}
+
+function updateAuthUI() {
+  const userMenu = getEl('userMenu');
+  const signInBtn = getEl('openSigninBtn');
+  const adminBtn = getEl('adminMenuBtn');
+
+  if (currentUser) {
+    addClass(userMenu, 'hidden');
+    removeClass(userMenu, 'hidden');
+    removeClass(signInBtn, 'hidden');
+    addClass(signInBtn, 'hidden');
+
+    const avatar = getEl('userMenuAvatar');
+    const name = getEl('userMenuName');
+    if (avatar) avatar.textContent = currentUser.name[0].toUpperCase();
+    if (name) name.textContent = '@' + currentUser.name;
+
+    if (adminBtn) {
+      toggleClass(adminBtn, 'hidden', !currentUser.isAdmin);
     }
-
-    // The one canonical admin username (lower-case, no whitespace).
-    const ADMIN_USERNAME = 'cook';
-
-    function isAdmin(username) {
-      return normaliseUsername(username) === ADMIN_USERNAME;
-    }
-
-    // ============================================================
-    //  STATE
-    // ============================================================
-    let allAssets     = [];   // live mirror of Firestore assets collection
-    let currentUser   = null; // { name: string (normalised display), password: string }
-    let currentCat    = 'all';
-    let currentSoundCat = 'all';
-    let currentSort   = 'newest';
-    let currentSoundsSort = 'newest';
-    let currentSearch = '';
-    let currentSoundsSearch = '';
-    let currentCreatorsSearch = '';
-    let currentCreatorsSort = 'uploads';
-    let openAsset     = null;
-    let selectedFile  = null;
-    let isSignUp      = false;
-    let maintenanceTimer = null;
-
-    // LocalStorage keys (used only when Firebase is unavailable)
-    const LS_ASSETS   = 'gtagassets_assets_v3';
-    const LS_USERS    = 'gtagassets_users_v3';
-    const LS_SESSION  = 'gtagassets_session_v3';
-
-    // ============================================================
-    //  USERS (localStorage — credentials never leave the browser)
-    // ============================================================
-    function getUsers() {
-      try { return JSON.parse(localStorage.getItem(LS_USERS) || '{}'); }
-      catch { return {}; }
-    }
-    function saveUsers(users) {
-      localStorage.setItem(LS_USERS, JSON.stringify(users));
-    }
-    function getSession() {
-      try { return JSON.parse(localStorage.getItem(LS_SESSION) || 'null'); }
-      catch { return null; }
-    }
-    function saveSession(user) {
-      localStorage.setItem(LS_SESSION, JSON.stringify(user));
-    }
-    function clearSession() {
-      localStorage.removeItem(LS_SESSION);
-    }
-
-    // ============================================================
-    //  ASSET STORAGE — Firestore (shared) with localStorage fallback
-    // ============================================================
-
-    // Load assets for the first render (used only in fallback mode).
-    function loadAssetsFromLocalStorage() {
-      try { return JSON.parse(localStorage.getItem(LS_ASSETS) || '[]'); }
-      catch { return []; }
-    }
-    function saveAssetsToLocalStorage(assets) {
-      localStorage.setItem(LS_ASSETS, JSON.stringify(assets));
-    }
-
-    // Convert a Firestore doc snapshot to our plain asset object.
-    function docToAsset(doc) {
-      return { id: doc.id, ...doc.data() };
-    }
-
-    // ---- SHARED LISTENER: keeps allAssets in sync for every tab/device ----
-    function subscribeToAssets() {
-      if (!firebaseReady) {
-        // Fallback: load once from localStorage
-        allAssets = loadAssetsFromLocalStorage();
-        renderAll();
-        return;
-      }
-
-      db.collection('assets')
-        .orderBy('createdAt', 'desc')
-        .onSnapshot(
-          snapshot => {
-            allAssets = snapshot.docs.map(docToAsset);
-            renderAll();
-          },
-          err => {
-            console.error('[Firestore] assets snapshot error:', err);
-            // Graceful fallback
-            allAssets = loadAssetsFromLocalStorage();
-            renderAll();
-          }
-        );
-    }
-
-    // Add a new asset document to Firestore (or localStorage fallback).
-    async function persistAsset(asset) {
-      if (firebaseReady) {
-        const ref = await db.collection('assets').add(asset);
-        return ref.id;
-      } else {
-        // Fallback: store locally
-        const id = 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-        const full = { ...asset, id };
-        allAssets.unshift(full);
-        saveAssetsToLocalStorage(allAssets);
-        return id;
-      }
-    }
-
-    // Delete an asset from Firestore (or local fallback).
-    async function removeAsset(id) {
-      if (firebaseReady) {
-        await db.collection('assets').doc(id).delete();
-      } else {
-        allAssets = allAssets.filter(a => a.id !== id);
-        saveAssetsToLocalStorage(allAssets);
-        renderAll();
-      }
-    }
-
-    // Update download count in Firestore (or local fallback).
-    async function incrementDownloads(id) {
-      if (firebaseReady) {
-        await db.collection('assets').doc(id).update({
-          downloads: firebase.firestore.FieldValue.increment(1)
-        });
-      } else {
-        const a = allAssets.find(x => x.id === id);
-        if (a) {
-          a.downloads = (a.downloads || 0) + 1;
-          saveAssetsToLocalStorage(allAssets);
-          renderAll();
-        }
-      }
-    }
-
-    // Update rating in Firestore (or local fallback).
-    async function updateRating(id, rating) {
-      if (firebaseReady) {
-        await db.collection('assets').doc(id).update({ rating });
-      } else {
-        const a = allAssets.find(x => x.id === id);
-        if (a) {
-          a.rating = rating;
-          saveAssetsToLocalStorage(allAssets);
-          renderAll();
-        }
-      }
-    }
-
-    // ============================================================
-    //  ADMIN SETTINGS — Firestore shared doc (maintenance + announcements)
-    // ============================================================
-    // Path: admin/settings  (a single document)
-    // Fields:
-    //   maintenance: { active: bool, message: string, endsAt: number|null }
-    //   announcements: [ { id, text, postedAt } ]
-
-    function subscribeToAdminSettings() {
-      if (!firebaseReady) {
-        // Fallback: load from localStorage
-        loadAdminSettingsFromLocalStorage();
-        return;
-      }
-
-      db.collection('admin').doc('settings')
-        .onSnapshot(
-          snap => {
-            if (!snap.exists) return;
-            const data = snap.data();
-            applyMaintenanceState(data.maintenance || {});
-            applyAnnouncementsState(data.announcements || []);
-          },
-          err => {
-            console.error('[Firestore] admin/settings snapshot error:', err);
-            loadAdminSettingsFromLocalStorage();
-          }
-        );
-    }
-
-    // ---------- Maintenance ----------
-
-    // Called by the real-time listener — applies state for EVERY visitor.
-    function applyMaintenanceState(m) {
-      const overlay    = document.getElementById('maintenanceOverlay');
-      const msgEl      = document.getElementById('maintenanceMessage');
-      const timerEl    = document.getElementById('maintenanceTimer');
-      const btnText    = document.getElementById('adminMaintenanceBtnText');
-      const statusEl   = document.getElementById('adminMaintenanceStatus');
-
-      if (maintenanceTimer) clearInterval(maintenanceTimer);
-
-      if (m.active) {
-        msgEl.textContent = m.message || "We'll be back shortly!";
-        overlay.classList.remove('hidden');
-
-        if (m.endsAt) {
-          function tick() {
-            const secs = Math.max(0, Math.round((m.endsAt - Date.now()) / 1000));
-            if (secs <= 0) {
-              timerEl.textContent = 'Maintenance ending soon...';
-              clearInterval(maintenanceTimer);
-            } else {
-              const mins = Math.floor(secs / 60);
-              const s    = secs % 60;
-              timerEl.textContent = `Estimated time: ${mins}m ${s < 10 ? '0' : ''}${s}s`;
-            }
-          }
-          tick();
-          maintenanceTimer = setInterval(tick, 1000);
-        } else {
-          timerEl.textContent = '';
-        }
-
-        if (btnText)  btnText.textContent  = 'Disable Maintenance';
-        if (statusEl) statusEl.textContent = 'Maintenance is currently ACTIVE.';
-
-        // Update the textarea with the live message so admin sees what's live.
-        const textarea = document.getElementById('adminMaintenanceMsg');
-        if (textarea) textarea.value = m.message || "We'll be back shortly!";
-
-      } else {
-        overlay.classList.add('hidden');
-        timerEl.textContent = '';
-        if (btnText)  btnText.textContent  = 'Enable Maintenance';
-        if (statusEl) statusEl.textContent = '';
-      }
-    }
-
-    // ---------- Announcements ----------
-
-    function applyAnnouncementsState(announcements) {
-      const banner    = document.getElementById('announcementBanner');
-      const textEl    = document.getElementById('announcementText');
-      const listEl    = document.getElementById('adminAnnouncementsList');
-
-      // Show latest active announcement in the header banner
-      if (announcements && announcements.length > 0) {
-        const latest = announcements[announcements.length - 1];
-        textEl.textContent = latest.text;
-        banner.classList.remove('hidden');
-      } else {
-        banner.classList.add('hidden');
-        textEl.textContent = '';
-      }
-
-      // Rebuild admin list
-      if (listEl) {
-        if (!announcements || announcements.length === 0) {
-          listEl.innerHTML = '<p class="admin-empty">No announcements yet.</p>';
-        } else {
-          listEl.innerHTML = '';
-          [...announcements].reverse().forEach(ann => {
-            const row = document.createElement('div');
-            row.className = 'admin-announcement-row';
-            row.innerHTML = `
-              <span class="admin-ann-text">${escapeHtml(ann.text)}</span>
-              <button class="btn-admin-delete-ann" data-id="${ann.id}" title="Delete">&times;</button>
-            `;
-            listEl.appendChild(row);
-          });
-
-          listEl.querySelectorAll('.btn-admin-delete-ann').forEach(btn => {
-            btn.addEventListener('click', async () => {
-              await deleteAnnouncement(btn.dataset.id);
-            });
-          });
-        }
-      }
-    }
-
-    // ---------- Firestore helpers for admin/settings ----------
-
-    async function getAdminSettings() {
-      if (!firebaseReady) return loadAdminSettingsRaw();
-      const snap = await db.collection('admin').doc('settings').get();
-      return snap.exists ? snap.data() : { maintenance: {}, announcements: [] };
-    }
-
-    async function setAdminSettings(patch) {
-      if (firebaseReady) {
-        await db.collection('admin').doc('settings').set(patch, { merge: true });
-      } else {
-        const current = loadAdminSettingsRaw();
-        const merged  = deepMerge(current, patch);
-        saveAdminSettingsToLocalStorage(merged);
-        applyMaintenanceState(merged.maintenance || {});
-        applyAnnouncementsState(merged.announcements || []);
-      }
-    }
-
-    // ---- LocalStorage fallback for admin settings ----
-    const LS_ADMIN = 'gtagassets_admin_v3';
-    function loadAdminSettingsRaw() {
-      try { return JSON.parse(localStorage.getItem(LS_ADMIN) || '{}'); }
-      catch { return {}; }
-    }
-    function loadAdminSettingsFromLocalStorage() {
-      const d = loadAdminSettingsRaw();
-      applyMaintenanceState(d.maintenance || {});
-      applyAnnouncementsState(d.announcements || []);
-    }
-    function saveAdminSettingsToLocalStorage(data) {
-      localStorage.setItem(LS_ADMIN, JSON.stringify(data));
-    }
-
-    // Simple deep merge for plain objects.
-    function deepMerge(target, source) {
-      const out = Object.assign({}, target);
-      for (const key of Object.keys(source)) {
-        if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-          out[key] = deepMerge(target[key] || {}, source[key]);
-        } else {
-          out[key] = source[key];
-        }
-      }
-      return out;
-    }
-
-    async function toggleMaintenance() {
-      const settings = await getAdminSettings();
-      const current  = settings.maintenance || {};
-      const active   = !current.active;
-      const message  = document.getElementById('adminMaintenanceMsg').value.trim() || "We'll be back shortly!";
-      const duration = parseInt(document.getElementById('adminMaintenanceDuration').value, 10) || 30;
-      const endsAt   = active ? Date.now() + duration * 60 * 1000 : null;
-
-      await setAdminSettings({
-        maintenance: { active, message, endsAt }
-      });
-
-      showToast(active ? 'Maintenance mode enabled.' : 'Maintenance mode disabled.');
-    }
-
-    async function postAnnouncement(text) {
-      const settings = await getAdminSettings();
-      const announcements = settings.announcements || [];
-      const newAnn = {
-        id: 'ann_' + Date.now(),
-        text,
-        postedAt: Date.now()
-      };
-      announcements.push(newAnn);
-      await setAdminSettings({ announcements });
-      showToast('Announcement posted.');
-    }
-
-    async function deleteAnnouncement(id) {
-      const settings = await getAdminSettings();
-      const announcements = (settings.announcements || []).filter(a => a.id !== id);
-      await setAdminSettings({ announcements });
-      showToast('Announcement deleted.');
-    }
-
-    // ============================================================
-    //  RENDER HELPERS
-    // ============================================================
-    function escapeHtml(str) {
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-    }
-
-    function fileIcon(type) {
-      const t = (type || '').toLowerCase();
-      if (['wav', 'mp3', 'ogg', 'flac'].includes(t)) return 'AUDIO';
-      if (['ttf', 'otf', 'woff', 'woff2'].includes(t)) return 'FONT';
-      if (['obj', 'fbx', 'glb', 'gltf', 'blend'].includes(t)) return '3D';
-      if (t === 'zip') return 'ZIP';
-      if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(t)) return 'IMG';
-      return t.toUpperCase() || 'FILE';
-    }
-
-    function buildAssetCard(asset) {
-      const isOwner = currentUser && normaliseUsername(currentUser.name) === normaliseUsername(asset.creator);
-      const canDelete = isOwner || (currentUser && isAdmin(currentUser.name));
-      const ext = fileIcon(asset.fileType);
-      const isImage = asset.fileData && ['IMG'].includes(ext);
-
-      const card = document.createElement('div');
-      card.className = 'asset-card';
-      card.dataset.id = asset.id;
-
-      card.innerHTML = `
-        <div class="card-preview">
-          ${isImage
-            ? `<img src="${asset.fileData}" alt="${escapeHtml(asset.name)}" loading="lazy" />`
-            : `<div class="card-placeholder"><span class="card-ext">${ext}</span></div>`
-          }
-          <span class="card-cat">${escapeHtml(asset.category || '')}</span>
-        </div>
-        <div class="card-body">
-          <h3 class="card-title">${escapeHtml(asset.name)}</h3>
-          <p class="card-creator">by ${escapeHtml(asset.creator || 'Unknown')}</p>
-          <div class="card-meta">
-            <span>${asset.downloads || 0} dl</span>
-            <span>&#x2B50; ${asset.rating || 0}</span>
-          </div>
-        </div>
-        ${canDelete ? `<button class="card-delete-btn" data-id="${asset.id}" title="Delete asset">&#x2715;</button>` : ''}
-      `;
-
-      card.addEventListener('click', e => {
-        if (e.target.closest('.card-delete-btn')) return;
-        openAssetModal(asset.id);
-      });
-
-      const delBtn = card.querySelector('.card-delete-btn');
-      if (delBtn) {
-        delBtn.addEventListener('click', async e => {
-          e.stopPropagation();
-          if (confirm('Delete this asset?')) {
-            await removeAsset(asset.id);
-            showToast('Asset deleted.');
-          }
-        });
-      }
-
-      return card;
-    }
-
-    function getFilteredSortedAssets(filterFn, sort) {
-      let list = allAssets.filter(filterFn);
-      list = list.filter(a => {
-        if (!currentSearch) return true;
-        const q = currentSearch.toLowerCase();
-        return (
-          (a.name || '').toLowerCase().includes(q) ||
-          (a.creator || '').toLowerCase().includes(q) ||
-          (a.category || '').toLowerCase().includes(q) ||
-          (a.tags || []).some(t => t.toLowerCase().includes(q))
-        );
-      });
-      switch (sort) {
-        case 'popular': list.sort((a, b) => (b.downloads || 0) - (a.downloads || 0)); break;
-        case 'rating':  list.sort((a, b) => (b.rating || 0) - (a.rating || 0)); break;
-        case 'name':    list.sort((a, b) => (a.name || '').localeCompare(b.name || '')); break;
-        default:        list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      }
-      return list;
-    }
-
-    function renderAssets() {
-      const grid   = document.getElementById('assetGrid');
-      const empty  = document.getElementById('emptyState');
-      const count  = document.getElementById('heroCount');
-      const title  = document.getElementById('gridTitle');
-
-      const soundCats = ['sound-effects', 'sounds'];
-      const filtered = getFilteredSortedAssets(
-        a => {
-          const inSoundCat = soundCats.includes(a.category);
-          if (inSoundCat) return false; // sounds live on the sounds page
-          if (currentCat === 'all') return true;
-          return a.category === currentCat;
-        },
-        currentSort
-      );
-
-      grid.innerHTML = '';
-      const total = allAssets.filter(a => !soundCats.includes(a.category)).length;
-      count.textContent = `${total} ASSET${total !== 1 ? 'S' : ''}`;
-      title.textContent = currentCat === 'all' ? 'All Assets' : currentCat.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-
-      if (filtered.length === 0) {
-        empty.style.display = '';
-        return;
-      }
-      empty.style.display = 'none';
-      filtered.forEach(a => grid.appendChild(buildAssetCard(a)));
-    }
-
-    function renderSounds() {
-      const grid  = document.getElementById('soundsGrid');
-      const empty = document.getElementById('soundsEmptyState');
-      const count = document.getElementById('soundsCount');
-
-      const soundCats = ['sound-effects', 'sounds'];
-
-      const filtered = allAssets.filter(a => {
-        if (!soundCats.includes(a.category)) return false;
-        if (currentSoundCat !== 'all' && a.category !== currentSoundCat) return false;
-        if (currentSoundsSearch) {
-          const q = currentSoundsSearch.toLowerCase();
-          return (
-            (a.name || '').toLowerCase().includes(q) ||
-            (a.creator || '').toLowerCase().includes(q) ||
-            (a.tags || []).some(t => t.toLowerCase().includes(q))
-          );
-        }
-        return true;
-      });
-
-      let list = [...filtered];
-      switch (currentSoundsSort) {
-        case 'popular': list.sort((a, b) => (b.downloads || 0) - (a.downloads || 0)); break;
-        case 'rating':  list.sort((a, b) => (b.rating || 0) - (a.rating || 0)); break;
-        case 'name':    list.sort((a, b) => (a.name || '').localeCompare(b.name || '')); break;
-        default:        list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      }
-
-      grid.innerHTML = '';
-      const total = allAssets.filter(a => soundCats.includes(a.category)).length;
-      count.textContent = `${total} SOUND${total !== 1 ? 'S' : ''}`;
-
-      if (list.length === 0) { empty.style.display = ''; return; }
-      empty.style.display = 'none';
-      list.forEach(a => grid.appendChild(buildAssetCard(a)));
-    }
-
-    function renderCreators() {
-      const grid   = document.getElementById('creatorsGrid');
-      const empty  = document.getElementById('creatorsEmptyState');
-      const count  = document.getElementById('creatorsCount');
-      const search = currentCreatorsSearch.toLowerCase();
-
-      const creatorMap = {};
-      allAssets.forEach(a => {
-        const key = normaliseUsername(a.creator);
-        if (!creatorMap[key]) {
-          creatorMap[key] = { name: a.creator, uploads: 0, downloads: 0 };
-        }
-        creatorMap[key].uploads++;
-        creatorMap[key].downloads += (a.downloads || 0);
-      });
-
-      let creators = Object.values(creatorMap).filter(c =>
-        !search || (c.name || '').toLowerCase().includes(search)
-      );
-
-      switch (currentCreatorsSort) {
-        case 'downloads': creators.sort((a, b) => b.downloads - a.downloads); break;
-        case 'name':      creators.sort((a, b) => (a.name || '').localeCompare(b.name || '')); break;
-        default:          creators.sort((a, b) => b.uploads - a.uploads);
-      }
-
-      grid.innerHTML = '';
-      count.textContent = `${creators.length} CREATOR${creators.length !== 1 ? 'S' : ''}`;
-
-      if (creators.length === 0) { empty.style.display = ''; return; }
-      empty.style.display = 'none';
-
-      creators.forEach(c => {
-        const card = document.createElement('div');
-        card.className = 'creator-card';
-        card.innerHTML = `
-          <div class="creator-card-avatar">${(c.name || '?')[0].toUpperCase()}</div>
-          <div class="creator-card-info">
-            <h3>@${escapeHtml(c.name || 'Unknown')}</h3>
-            <p>${c.uploads} upload${c.uploads !== 1 ? 's' : ''} &middot; ${c.downloads} dl</p>
-          </div>
-        `;
-        card.addEventListener('click', () => openCreatorModal(c.name));
-        grid.appendChild(card);
-      });
-    }
-
-    function renderAll() {
-      renderAssets();
-      renderSounds();
-      renderCreators();
-    }
-
-    // ============================================================
-    //  ASSET MODAL
-    // ============================================================
-    function openAssetModal(id) {
-      const asset = allAssets.find(a => a.id === id);
-      if (!asset) return;
-      openAsset = asset;
-
-      const ext = fileIcon(asset.fileType);
-      const isImage = asset.fileData && ext === 'IMG';
-
-      const preview = document.getElementById('modalPreview');
-      preview.innerHTML = isImage
-        ? `<img src="${asset.fileData}" alt="${escapeHtml(asset.name)}" />`
-        : `<div class="modal-placeholder"><span class="card-ext large">${ext}</span></div>`;
-
-      document.getElementById('modalTitle').textContent     = asset.name || '';
-      document.getElementById('modalCreator').innerHTML     = `By <span>${escapeHtml(asset.creator || 'Unknown')}</span>`;
-      document.getElementById('modalDownloads').textContent = asset.downloads || 0;
-      document.getElementById('modalRating').textContent    = asset.rating ? asset.rating.toFixed(1) : '0';
-      document.getElementById('modalCategory').textContent  = asset.category || '';
-      document.getElementById('modalFileType').textContent  = (asset.fileType || '').toUpperCase();
-      document.getElementById('modalDesc').textContent      = asset.description || 'No description provided.';
-
-      const tagsEl = document.getElementById('modalTags');
-      tagsEl.innerHTML = (asset.tags || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('');
-
-      const canDelete =
-        (currentUser && normaliseUsername(currentUser.name) === normaliseUsername(asset.creator)) ||
-        (currentUser && isAdmin(currentUser.name));
-      document.getElementById('modalDeleteBtn').style.display = canDelete ? '' : 'none';
-
-      document.getElementById('assetModal').classList.add('active');
-    }
-
-    document.getElementById('closeAssetModal').addEventListener('click', () => {
-      document.getElementById('assetModal').classList.remove('active');
-      openAsset = null;
-    });
-
-    document.getElementById('assetModal').addEventListener('click', e => {
-      if (e.target === document.getElementById('assetModal')) {
-        document.getElementById('assetModal').classList.remove('active');
-        openAsset = null;
-      }
-    });
-
-    document.getElementById('modalDownloadBtn').addEventListener('click', async () => {
-      if (!openAsset) return;
-      if (openAsset.fileData) {
-        const a = document.createElement('a');
-        a.href = openAsset.fileData;
-        a.download = openAsset.fileName || openAsset.name;
-        a.click();
-      }
-      await incrementDownloads(openAsset.id);
-      document.getElementById('modalDownloads').textContent = (openAsset.downloads || 0) + 1;
-      showToast('Download started!');
-    });
-
-    document.getElementById('modalDeleteBtn').addEventListener('click', async () => {
-      if (!openAsset) return;
-      if (confirm('Delete this asset permanently?')) {
-        await removeAsset(openAsset.id);
-        document.getElementById('assetModal').classList.remove('active');
-        openAsset = null;
-        showToast('Asset deleted.');
-      }
-    });
-
-    // Star rating
-    document.getElementById('starRating').addEventListener('click', async e => {
-      const star = e.target.closest('.star');
-      if (!star || !openAsset) return;
-      const val = parseInt(star.dataset.val, 10);
-      await updateRating(openAsset.id, val);
-      document.getElementById('modalRating').textContent = val.toFixed(1);
-      showToast(`Rated ${val} star${val !== 1 ? 's' : ''}!`);
-    });
-
-    // ============================================================
-    //  CREATOR MODAL
-    // ============================================================
-    function openCreatorModal(name) {
-      const assets = allAssets.filter(a => normaliseUsername(a.creator) === normaliseUsername(name));
-      const totalDownloads = assets.reduce((s, a) => s + (a.downloads || 0), 0);
-
-      document.getElementById('creatorAvatar').textContent     = (name || '?')[0].toUpperCase();
-      document.getElementById('creatorName').textContent       = '@' + name;
-      document.getElementById('creatorUploads').textContent    = assets.length;
-      document.getElementById('creatorDownloads').textContent  = totalDownloads;
-      document.getElementById('creatorFollowers').textContent  = 0;
-      document.getElementById('creatorAssetsName').textContent = name;
-
-      const grid = document.getElementById('creatorAssetsGrid');
-      grid.innerHTML = '';
-      assets.forEach(a => grid.appendChild(buildAssetCard(a)));
-
-      document.getElementById('creatorModal').classList.add('active');
-    }
-
-    document.getElementById('closeCreatorModal').addEventListener('click', () => {
-      document.getElementById('creatorModal').classList.remove('active');
-    });
-    document.getElementById('creatorModal').addEventListener('click', e => {
-      if (e.target === document.getElementById('creatorModal'))
-        document.getElementById('creatorModal').classList.remove('active');
-    });
-
-    // ============================================================
-    //  UPLOAD MODAL
-    // ============================================================
-    function openUpload() {
-      if (!currentUser) { openSignin(); return; }
-      // Pre-fill creator name from current user
-      document.getElementById('creatorNameInput').value = currentUser.name;
-      document.getElementById('uploadModal').classList.add('active');
-    }
-
-    document.getElementById('openUploadBtn').addEventListener('click', openUpload);
-    document.getElementById('emptyUploadBtn').addEventListener('click', openUpload);
-    document.querySelectorAll('.sounds-upload-btn').forEach(b => b.addEventListener('click', openUpload));
-    document.querySelectorAll('.creators-upload-btn').forEach(b => b.addEventListener('click', openUpload));
-
-    document.getElementById('closeUploadModal').addEventListener('click', () => {
-      document.getElementById('uploadModal').classList.remove('active');
-    });
-    document.getElementById('uploadModal').addEventListener('click', e => {
-      if (e.target === document.getElementById('uploadModal'))
-        document.getElementById('uploadModal').classList.remove('active');
-    });
-
-    // File drop zone
-    const dropZone  = document.getElementById('dropZone');
-    const fileInput = document.getElementById('fileInput');
-
-    dropZone.addEventListener('click', () => fileInput.click());
-    dropZone.querySelector('.browse-link').addEventListener('click', e => { e.stopPropagation(); fileInput.click(); });
-
-    fileInput.addEventListener('change', () => {
-      if (fileInput.files[0]) handleFileSelected(fileInput.files[0]);
-    });
-
-    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-    dropZone.addEventListener('drop', e => {
-      e.preventDefault();
-      dropZone.classList.remove('drag-over');
-      if (e.dataTransfer.files[0]) handleFileSelected(e.dataTransfer.files[0]);
-    });
-
-    function handleFileSelected(file) {
-      const MAX = 50 * 1024 * 1024;
-      if (file.size > MAX) { showToast('File too large (max 50 MB)'); return; }
-      selectedFile = file;
-      const preview = document.getElementById('filePreview');
-      const img     = document.getElementById('filePreviewImg');
-      const name    = document.getElementById('filePreviewName');
-      name.textContent = file.name;
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = e => { img.src = e.target.result; img.style.display = ''; };
-        reader.readAsDataURL(file);
-      } else {
-        img.style.display = 'none';
-      }
-      preview.style.display = 'flex';
-      dropZone.style.display = 'none';
-    }
-
-    document.getElementById('removeFileBtn').addEventListener('click', () => {
-      selectedFile = null;
-      fileInput.value = '';
-      document.getElementById('filePreview').style.display = 'none';
-      dropZone.style.display = '';
-    });
-
-    // Custom category select
-    const catTrigger  = document.getElementById('assetCategoryTrigger');
-    const catDropdown = document.getElementById('assetCategoryDropdown');
-    const catLabel    = document.getElementById('assetCategoryLabel');
-    const catHidden   = document.getElementById('assetCategory');
-
-    catTrigger.addEventListener('click', () => catDropdown.classList.toggle('open'));
-    document.addEventListener('click', e => {
-      if (!document.getElementById('assetCategoryWrap').contains(e.target))
-        catDropdown.classList.remove('open');
-    });
-    catDropdown.querySelectorAll('.custom-select-option').forEach(opt => {
-      opt.addEventListener('click', () => {
-        catLabel.textContent = opt.textContent;
-        catLabel.classList.remove('placeholder');
-        catHidden.value = opt.dataset.value;
-        catDropdown.classList.remove('open');
-      });
-    });
-
-    // Submit upload
-    document.getElementById('uploadForm').addEventListener('submit', async e => {
-      e.preventDefault();
-      const name     = document.getElementById('assetName').value.trim();
-      const category = document.getElementById('assetCategory').value;
-      const desc     = document.getElementById('assetDesc').value.trim();
-      const tagsRaw  = document.getElementById('assetTags').value.trim();
-      const creator  = document.getElementById('creatorNameInput').value.trim() || (currentUser ? currentUser.name : '');
-
-      if (!name)     { showToast('Please enter an asset name.'); return; }
-      if (!category) { showToast('Please select a category.'); return; }
-      if (!creator)  { showToast('Please enter your name.'); return; }
-      if (!selectedFile) { showToast('Please select a file.'); return; }
-
-      const submitBtn = document.querySelector('#uploadForm .btn-submit');
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Uploading...';
-
-      try {
-        const ext = selectedFile.name.split('.').pop().toLowerCase();
-
-        // Read file as base64 data URL so it can be stored & shared via Firestore.
-        // NOTE: For files > a few KB you should use Firebase Storage instead of
-        // storing base64 in Firestore documents. This approach works for small
-        // assets and maintains the existing pattern.
-        const fileData = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload  = ev => resolve(ev.target.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(selectedFile);
-        });
-
-        const asset = {
-          name,
-          category,
-          description: desc,
-          tags: tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [],
-          creator,
-          // Normalise the creator key so lookups are consistent
-          creatorKey: normaliseUsername(creator),
-          fileName: selectedFile.name,
-          fileType: ext,
-          fileData,               // base64 — shared via Firestore
-          downloads: 0,
-          rating: 0,
-          createdAt: Date.now()
-        };
-
-        await persistAsset(asset);
-
-        showToast('Asset uploaded successfully!');
-        document.getElementById('uploadModal').classList.remove('active');
-
-        // Reset form
-        document.getElementById('uploadForm').reset();
-        catLabel.textContent = 'Select category...';
-        catLabel.classList.add('placeholder');
-        catHidden.value = '';
-        selectedFile = null;
-        document.getElementById('filePreview').style.display = 'none';
-        dropZone.style.display = '';
-
-      } catch (err) {
-        console.error('Upload error:', err);
-        showToast('Upload failed. Please try again.');
-      } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Upload Asset';
-      }
-    });
-
-    // ============================================================
-    //  AUTH
-    // ============================================================
-    function openSignin() {
-      document.getElementById('signinModal').classList.add('active');
-    }
-
-    document.getElementById('openSigninBtn').addEventListener('click', openSignin);
-    document.getElementById('closeSigninModal').addEventListener('click', () => {
-      document.getElementById('signinModal').classList.remove('active');
-    });
-    document.getElementById('signinModal').addEventListener('click', e => {
-      if (e.target === document.getElementById('signinModal'))
-        document.getElementById('signinModal').classList.remove('active');
-    });
-
-    let isSignUpMode = false;
-    document.getElementById('authToggleBtn').addEventListener('click', () => {
-      isSignUpMode = !isSignUpMode;
-      document.getElementById('authTitle').textContent    = isSignUpMode ? 'Create Account' : 'Welcome Back';
-      document.getElementById('authSubtitle').textContent = isSignUpMode ? 'Join the community' : 'Sign in to upload, download, and follow';
-      document.getElementById('authSubmitBtn').textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
-      document.getElementById('authToggleText').textContent = isSignUpMode ? 'Already have an account?' : "Don't have an account?";
-      document.getElementById('authToggleBtn').textContent  = isSignUpMode ? 'Sign In' : 'Sign Up';
-      document.getElementById('authError').classList.add('hidden');
-    });
-
-    document.getElementById('signinForm').addEventListener('submit', e => {
-      e.preventDefault();
-      // ---- SECURITY FIX: always normalise the username ----
-      // Trimming + lower-casing ensures " cook", "COOK", "Cook " etc.
-      // all resolve to "cook" and cannot bypass the admin check.
-      const rawName = document.getElementById('signinName').value;
-      const name    = rawName.trim();  // preserve display casing but strip whitespace
-      const normKey = normaliseUsername(name); // lower-case key for storage lookup
-      const pass    = document.getElementById('signinPassword').value;
-      const errEl   = document.getElementById('authError');
-
-      if (!name || !pass) {
-        errEl.textContent = 'Please fill in all fields.';
-        errEl.classList.remove('hidden');
-        return;
-      }
-
-      const users = getUsers();
-
-      if (isSignUpMode) {
-        if (users[normKey]) {
-          errEl.textContent = 'That username is already taken.';
-          errEl.classList.remove('hidden');
-          return;
-        }
-        // Store user keyed by normalised name; display name retains original casing.
-        users[normKey] = { name, password: pass };
-        saveUsers(users);
-        currentUser = { name, password: pass };
-        saveSession(currentUser);
-        document.getElementById('signinModal').classList.remove('active');
-        updateUserUI();
-        showToast(`Welcome, ${name}!`);
-      } else {
-        const user = users[normKey];
-        if (!user || user.password !== pass) {
-          errEl.textContent = 'Incorrect username or password.';
-          errEl.classList.remove('hidden');
-          return;
-        }
-        currentUser = { name: user.name, password: user.password };
-        saveSession(currentUser);
-        document.getElementById('signinModal').classList.remove('active');
-        updateUserUI();
-        showToast(`Welcome back, ${user.name}!`);
-      }
-    });
-
-    document.getElementById('signOutBtn').addEventListener('click', () => {
-      currentUser = null;
-      clearSession();
-      updateUserUI();
-      document.getElementById('userDropdown').classList.remove('open');
-      renderAll();
-      showToast('Signed out.');
-    });
-
-    function updateUserUI() {
-      const signinBtn = document.getElementById('openSigninBtn');
-      const userMenu  = document.getElementById('userMenu');
-      const adminBtn  = document.getElementById('adminMenuBtn');
-
-      if (currentUser) {
-        signinBtn.style.display = 'none';
-        userMenu.classList.remove('hidden');
-        document.getElementById('userMenuAvatar').textContent = currentUser.name[0].toUpperCase();
-        document.getElementById('userMenuName').textContent   = '@' + currentUser.name;
-
-        // ---- SECURITY FIX: use isAdmin() which normalises the name ----
-        adminBtn.style.display = isAdmin(currentUser.name) ? '' : 'none';
-      } else {
-        signinBtn.style.display = '';
-        userMenu.classList.add('hidden');
-        adminBtn.style.display = 'none';
-      }
-    }
-
-    // User menu dropdown toggle
-    document.getElementById('userMenuTrigger').addEventListener('click', () => {
-      document.getElementById('userDropdown').classList.toggle('open');
-    });
-    document.addEventListener('click', e => {
-      if (!document.getElementById('userMenu').contains(e.target))
-        document.getElementById('userDropdown').classList.remove('open');
-    });
-
-    document.getElementById('viewProfileBtn').addEventListener('click', () => {
-      document.getElementById('userDropdown').classList.remove('open');
-      if (currentUser) openCreatorModal(currentUser.name);
-    });
-
-    // ============================================================
-    //  ADMIN PANEL
-    // ============================================================
-    document.getElementById('adminMenuBtn').addEventListener('click', () => {
-      // Guard: only open for the real admin (re-checked server-side in Firestore rules)
-      if (!currentUser || !isAdmin(currentUser.name)) {
-        showToast('Access denied.');
-        return;
-      }
-      document.getElementById('userDropdown').classList.remove('open');
-      document.getElementById('adminModal').classList.add('active');
-    });
-
-    document.getElementById('closeAdminModal').addEventListener('click', () => {
-      document.getElementById('adminModal').classList.remove('active');
-    });
-    document.getElementById('adminModal').addEventListener('click', e => {
-      if (e.target === document.getElementById('adminModal'))
-        document.getElementById('adminModal').classList.remove('active');
-    });
-
-    document.getElementById('adminMaintenanceToggle').addEventListener('click', toggleMaintenance);
-
-    document.getElementById('adminPostAnnouncementBtn').addEventListener('click', async () => {
-      const text = document.getElementById('adminAnnouncementInput').value.trim();
-      if (!text) { showToast('Enter an announcement first.'); return; }
-      await postAnnouncement(text);
-      document.getElementById('adminAnnouncementInput').value = '';
-    });
-
-    document.getElementById('announcementClose').addEventListener('click', () => {
-      document.getElementById('announcementBanner').classList.add('hidden');
-    });
-
-    // ============================================================
-    //  NAVIGATION / PAGE SWITCHING
-    // ============================================================
-    document.querySelectorAll('.nav-link').forEach(link => {
-      link.addEventListener('click', e => {
-        e.preventDefault();
-        const page = link.dataset.page;
-        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-        link.classList.add('active');
-        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-        document.getElementById('page-' + page).classList.add('active');
-      });
-    });
-
-    // Category pills
-    document.querySelectorAll('.cat-pill').forEach(pill => {
-      pill.addEventListener('click', () => {
-        document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
-        pill.classList.add('active');
-        currentCat = pill.dataset.cat;
+  } else {
+    addClass(userMenu, 'hidden');
+    removeClass(signInBtn, 'hidden');
+    if (adminBtn) addClass(adminBtn, 'hidden');
+  }
+}
+
+function showAuthError(msg) {
+  const error = getEl('authError');
+  if (!error) return;
+  error.textContent = msg;
+  removeClass(error, 'hidden');
+}
+
+function clearAuthError() {
+  const error = getEl('authError');
+  if (error) addClass(error, 'hidden');
+}
+
+// ============ ASSET MANAGEMENT ============
+let allAssets = [];
+
+function persistAsset(asset) {
+  if (db) {
+    db.collection('assets').add({
+      ...asset,
+      uploadedAt: firebase.firestore.FieldValue.serverTimestamp()
+    })
+      .catch(err => {
+        console.error('Firestore error:', err);
+        // Fallback to localStorage
+        allAssets.push(asset);
         renderAssets();
       });
+  } else {
+    // Fallback: localStorage
+    allAssets.push(asset);
+    renderAssets();
+    saveAssetsToStorage();
+  }
+}
+
+function subscribeToAssets() {
+  if (db) {
+    if (assetsListener) assetsListener();
+    assetsListener = db.collection('assets')
+      .orderBy('uploadedAt', 'desc')
+      .onSnapshot(snapshot => {
+        allAssets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderAssets();
+      });
+  } else {
+    // Fallback: load from localStorage
+    const stored = localStorage.getItem('assets');
+    allAssets = stored ? JSON.parse(stored) : [];
+    renderAssets();
+  }
+}
+
+function saveAssetsToStorage() {
+  localStorage.setItem('assets', JSON.stringify(allAssets));
+}
+
+function deleteAsset(assetId) {
+  if (!currentUser) {
+    showToast('Sign in to delete assets');
+    return;
+  }
+
+  const asset = allAssets.find(a => a.id === assetId);
+  if (!asset || asset.creator !== currentUser.name) {
+    showToast('You can only delete your own assets');
+    return;
+  }
+
+  if (db) {
+    db.collection('assets').doc(assetId).delete()
+      .catch(err => {
+        console.error('Delete error:', err);
+        allAssets = allAssets.filter(a => a.id !== assetId);
+        renderAssets();
+        saveAssetsToStorage();
+      });
+  } else {
+    allAssets = allAssets.filter(a => a.id !== assetId);
+    renderAssets();
+    saveAssetsToStorage();
+  }
+
+  hideModal('assetModal');
+  showToast('Asset deleted');
+}
+
+function renderAssets() {
+  const grid = getEl('assetGrid');
+  const empty = getEl('emptyState');
+  const count = getEl('heroCount');
+  const soundsGrid = getEl('soundsGrid');
+  const soundsCount = getEl('soundsCount');
+  const creatorsGrid = getEl('creatorsGrid');
+  const creatorsCount = getEl('creatorsCount');
+
+  if (count) count.textContent = allAssets.length + ' ASSETS';
+
+  // Assets tab
+  const assetCards = allAssets
+    .filter(a => !['sound-effects', 'sounds'].includes(a.category))
+    .map(asset => createAssetCard(asset))
+    .join('');
+
+  if (grid) {
+    grid.innerHTML = assetCards || '';
+    if (empty) toggleClass(empty, 'hidden', assetCards.length > 0);
+  }
+
+  // Sounds tab
+  const soundCards = allAssets
+    .filter(a => ['sound-effects', 'sounds'].includes(a.category))
+    .map(asset => createAssetCard(asset))
+    .join('');
+
+  if (soundsGrid) soundsGrid.innerHTML = soundCards || '';
+  if (soundsCount) soundsCount.textContent = soundCards.split('<div class="asset-card"').length - 1 + ' SOUNDS';
+  if (getEl('soundsEmptyState')) {
+    toggleClass(getEl('soundsEmptyState'), 'hidden', soundCards.length > 0);
+  }
+
+  // Creators tab
+  const creators = getCreators();
+  const creatorCards = creators
+    .map(creator => createCreatorCard(creator))
+    .join('');
+
+  if (creatorsGrid) creatorsGrid.innerHTML = creatorCards || '';
+  if (creatorsCount) creatorsCount.textContent = creators.length + ' CREATORS';
+  if (getEl('creatorsEmptyState')) {
+    toggleClass(getEl('creatorsEmptyState'), 'hidden', creatorCards.length > 0);
+  }
+
+  attachAssetCardListeners();
+}
+
+function createAssetCard(asset) {
+  const preview = asset.preview || '📦';
+  const downloads = asset.downloads || 0;
+  const rating = asset.rating || 0;
+
+  return `
+    <div class="asset-card" data-asset-id="${asset.id}">
+      <div class="asset-preview">
+        ${typeof preview === 'string' && preview.startsWith('data:') 
+          ? `<img src="${preview}" alt="${asset.name}" />` 
+          : preview}
+      </div>
+      <div class="asset-card-content">
+        <h3>${asset.name}</h3>
+        <p class="asset-card-creator">By ${asset.creator}</p>
+        <div class="asset-card-footer">
+          <span>⭐ ${rating}</span>
+          <span>📥 ${downloads}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function getCreators() {
+  const creatorMap = {};
+  allAssets.forEach(asset => {
+    if (!creatorMap[asset.creator]) {
+      creatorMap[asset.creator] = {
+        name: asset.creator,
+        uploads: 0,
+        downloads: 0,
+        followers: Math.floor(Math.random() * 100)
+      };
+    }
+    creatorMap[asset.creator].uploads++;
+    creatorMap[asset.creator].downloads += asset.downloads || 0;
+  });
+  return Object.values(creatorMap);
+}
+
+function createCreatorCard(creator) {
+  return `
+    <div class="creator-card" data-creator="${creator.name}">
+      <div class="creator-card-avatar">${creator.name[0].toUpperCase()}</div>
+      <h3>@${creator.name}</h3>
+      <div class="creator-card-stats">
+        <span>${creator.uploads} uploads</span>
+        <span>${creator.downloads} downloads</span>
+      </div>
+    </div>
+  `;
+}
+
+function attachAssetCardListeners() {
+  document.querySelectorAll('.asset-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const assetId = card.getAttribute('data-asset-id');
+      const asset = allAssets.find(a => a.id === assetId);
+      if (asset) showAssetModal(asset);
+    });
+  });
+
+  document.querySelectorAll('.creator-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const creatorName = card.getAttribute('data-creator');
+      showCreatorModal(creatorName);
+    });
+  });
+}
+
+function showAssetModal(asset) {
+  const modalTitle = getEl('modalTitle');
+  const modalCreator = getEl('modalCreator');
+  const modalDownloads = getEl('modalDownloads');
+  const modalRating = getEl('modalRating');
+  const modalCategory = getEl('modalCategory');
+  const modalFileType = getEl('modalFileType');
+  const modalDesc = getEl('modalDesc');
+  const modalTags = getEl('modalTags');
+  const deleteBtn = getEl('modalDeleteBtn');
+  const downloadBtn = getEl('modalDownloadBtn');
+  const preview = getEl('modalPreview');
+
+  if (modalTitle) modalTitle.textContent = asset.name;
+  if (modalCreator) modalCreator.innerHTML = `By <span>${asset.creator}</span>`;
+  if (modalDownloads) modalDownloads.textContent = asset.downloads || 0;
+  if (modalRating) modalRating.textContent = asset.rating || 0;
+  if (modalCategory) modalCategory.textContent = asset.category;
+  if (modalFileType) modalFileType.textContent = asset.fileType || 'FILE';
+  if (modalDesc) modalDesc.textContent = asset.description || 'No description provided.';
+
+  if (modalTags) {
+    const tags = asset.tags ? asset.tags.split(',').map(t => `<span class="tag">${t.trim()}</span>`).join('') : '';
+    modalTags.innerHTML = tags;
+  }
+
+  if (preview) {
+    const previewContent = asset.preview || '📦';
+    preview.innerHTML = typeof previewContent === 'string' && previewContent.startsWith('data:')
+      ? `<img src="${previewContent}" alt="${asset.name}" />`
+      : previewContent;
+  }
+
+  if (deleteBtn) {
+    toggleClass(deleteBtn, 'hidden', !currentUser || currentUser.name !== asset.creator);
+  }
+
+  if (downloadBtn) {
+    downloadBtn.onclick = () => {
+      if (asset.preview && asset.preview.startsWith('data:')) {
+        const link = document.createElement('a');
+        link.href = asset.preview;
+        link.download = asset.name + '.' + (asset.fileType || 'bin');
+        link.click();
+      }
+      asset.downloads = (asset.downloads || 0) + 1;
+      renderAssets();
+      showToast('Downloaded!');
+    };
+  }
+
+  const stars = document.querySelectorAll('#starRating .star');
+  stars.forEach(star => {
+    star.classList.remove('active');
+    star.addEventListener('click', () => {
+      const rating = parseInt(star.getAttribute('data-val'));
+      asset.rating = rating;
+      renderAssets();
+      showToast('Rated!');
+    });
+  });
+
+  showModal('assetModal');
+}
+
+function showCreatorModal(creatorName) {
+  const avatar = getEl('creatorAvatar');
+  const name = getEl('creatorName');
+  const uploads = getEl('creatorUploads');
+  const downloads = getEl('creatorDownloads');
+  const followers = getEl('creatorFollowers');
+  const assetsName = getEl('creatorAssetsName');
+  const assetsGrid = getEl('creatorAssetsGrid');
+
+  const creator = getCreators().find(c => c.name === creatorName);
+  if (!creator) return;
+
+  if (avatar) avatar.textContent = creatorName[0].toUpperCase();
+  if (name) name.textContent = '@' + creatorName;
+  if (uploads) uploads.textContent = creator.uploads;
+  if (downloads) downloads.textContent = creator.downloads;
+  if (followers) followers.textContent = creator.followers;
+  if (assetsName) assetsName.textContent = creatorName;
+
+  const creatorAssets = allAssets
+    .filter(a => a.creator === creatorName)
+    .map(a => createAssetCard(a))
+    .join('');
+
+  if (assetsGrid) assetsGrid.innerHTML = creatorAssets || '<p>No assets yet</p>';
+
+  showModal('creatorModal');
+}
+
+// ============ ADMIN PANEL ============
+function subscribeToAdminSettings() {
+  if (!db) return;
+
+  if (adminSettingsListener) adminSettingsListener();
+
+  adminSettingsListener = db.collection('admin').doc('settings')
+    .onSnapshot(snapshot => {
+      const data = snapshot.exists ? snapshot.data() : {};
+      applyMaintenanceState(data.maintenance || {});
+      applyAnnouncementsState(data.announcements || []);
+    });
+}
+
+function applyMaintenanceState(maintenanceData) {
+  const overlay = getEl('maintenanceOverlay');
+  const message = getEl('maintenanceMessage');
+
+  if (!overlay) return;
+
+  if (maintenanceData && maintenanceData.enabled) {
+    if (message) message.textContent = maintenanceData.message || 'We'll be back shortly!';
+    removeClass(overlay, 'hidden');
+  } else {
+    addClass(overlay, 'hidden');
+  }
+}
+
+function applyAnnouncementsState(announcements) {
+  const banner = getEl('announcementBanner');
+  const text = getEl('announcementText');
+
+  if (!banner || !announcements || announcements.length === 0) return;
+
+  if (text) text.textContent = announcements[0].message;
+  removeClass(banner, 'hidden');
+}
+
+function postAnnouncement() {
+  if (!currentUser || !currentUser.isAdmin) {
+    showToast('Admin only');
+    return;
+  }
+
+  const input = getEl('adminAnnouncementInput');
+  if (!input || !input.value.trim()) return;
+
+  const announcement = {
+    message: input.value.trim(),
+    timestamp: new Date().toISOString()
+  };
+
+  if (db) {
+    db.collection('admin').doc('settings').update({
+      announcements: firebase.firestore.FieldValue.arrayUnion(announcement)
+    }).catch(err => {
+      console.error('Announcement error:', err);
+    });
+  }
+
+  input.value = '';
+  showToast('Announcement posted!');
+}
+
+function toggleMaintenance() {
+  if (!currentUser || !currentUser.isAdmin) {
+    showToast('Admin only');
+    return;
+  }
+
+  const msgInput = getEl('adminMaintenanceMsg');
+  const durationInput = getEl('adminMaintenanceDuration');
+  const message = msgInput ? msgInput.value.trim() : 'We\'ll be back shortly!';
+  const duration = durationInput ? parseInt(durationInput.value) : 30;
+
+  if (db) {
+    db.collection('admin').doc('settings').update({
+      maintenance: {
+        enabled: true,
+        message: message,
+        expiresAt: new Date(Date.now() + duration * 60000).toISOString()
+      }
+    }).catch(err => {
+      console.error('Maintenance error:', err);
+    });
+  }
+
+  showToast('Maintenance mode activated!');
+}
+
+// ============ UPLOAD HANDLER ============
+function handleUpload(e) {
+  e.preventDefault();
+
+  if (!currentUser) {
+    showToast('Sign in to upload');
+    return;
+  }
+
+  const name = getEl('assetName');
+  const category = getEl('assetCategory');
+  const desc = getEl('assetDesc');
+  const tags = getEl('assetTags');
+  const fileInput = getEl('fileInput');
+
+  if (!name || !name.value.trim() || !category || !category.value) {
+    showToast('Name and category required');
+    return;
+  }
+
+  const file = fileInput ? fileInput.files[0] : null;
+  if (!file) {
+    showToast('Please select a file');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const asset = {
+      name: name.value.trim(),
+      category: category.value,
+      description: desc ? desc.value : '',
+      tags: tags ? tags.value : '',
+      creator: currentUser.name,
+      preview: reader.result,
+      fileType: file.name.split('.').pop().toUpperCase(),
+      downloads: 0,
+      rating: 0
+    };
+
+    persistAsset(asset);
+    hideModal('uploadModal');
+    resetUploadForm();
+    showToast('Asset uploaded successfully!');
+  };
+
+  reader.readAsDataURL(file);
+}
+
+function resetUploadForm() {
+  const form = getEl('uploadForm');
+  const filePreview = getEl('filePreview');
+  const fileInput = getEl('fileInput');
+
+  if (form) form.reset();
+  if (filePreview) filePreview.style.display = 'none';
+  if (fileInput) fileInput.value = '';
+
+  const categoryLabel = getEl('assetCategoryLabel');
+  if (categoryLabel) {
+    categoryLabel.textContent = 'Select category...';
+    categoryLabel.classList.add('placeholder');
+  }
+}
+
+// ============ DOM READY - ATTACH ALL LISTENERS ============
+document.addEventListener('DOMContentLoaded', () => {
+  // Initialize
+  initFirebase();
+  const stored = localStorage.getItem('currentUser');
+  if (stored) currentUser = JSON.parse(stored);
+  updateAuthUI();
+  subscribeToAssets();
+  subscribeToAdminSettings();
+
+  // Header buttons
+  const openUploadBtn = getEl('openUploadBtn');
+  const openSigninBtn = getEl('openSigninBtn');
+  if (openUploadBtn) openUploadBtn.addEventListener('click', () => showModal('uploadModal'));
+  if (openSigninBtn) openSigninBtn.addEventListener('click', () => showModal('signinModal'));
+
+  // Modal closes
+  const closeUploadModal = getEl('closeUploadModal');
+  const closeSigninModal = getEl('closeSigninModal');
+  const closeAssetModal = getEl('closeAssetModal');
+  const closeCreatorModal = getEl('closeCreatorModal');
+  const closeAdminModal = getEl('closeAdminModal');
+
+  if (closeUploadModal) closeUploadModal.addEventListener('click', () => hideModal('uploadModal'));
+  if (closeSigninModal) closeSigninModal.addEventListener('click', () => hideModal('signinModal'));
+  if (closeAssetModal) closeAssetModal.addEventListener('click', () => hideModal('assetModal'));
+  if (closeCreatorModal) closeCreatorModal.addEventListener('click', () => hideModal('creatorModal'));
+  if (closeAdminModal) closeAdminModal.addEventListener('click', () => hideModal('adminModal'));
+
+  // Upload form
+  const uploadForm = getEl('uploadForm');
+  if (uploadForm) uploadForm.addEventListener('submit', handleUpload);
+
+  // File drop zone
+  const dropZone = getEl('dropZone');
+  const fileInput = getEl('fileInput');
+  const removeFileBtn = getEl('removeFileBtn');
+
+  if (dropZone && fileInput) {
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      addClass(dropZone, 'dragover');
+    });
+    dropZone.addEventListener('dragleave', () => removeClass(dropZone, 'dragover'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      removeClass(dropZone, 'dragover');
+      if (e.dataTransfer.files[0]) {
+        fileInput.files = e.dataTransfer.files;
+        updateFilePreview(e.dataTransfer.files[0]);
+      }
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files[0]) updateFilePreview(fileInput.files[0]);
+    });
+  }
+
+  if (removeFileBtn) {
+    removeFileBtn.addEventListener('click', () => {
+      if (fileInput) fileInput.value = '';
+      const preview = getEl('filePreview');
+      if (preview) preview.style.display = 'none';
+    });
+  }
+
+  // Sign in/up form
+  const signinForm = getEl('signinForm');
+  const authToggleBtn = getEl('authToggleBtn');
+  const authTitle = getEl('authTitle');
+  const authSubtitle = getEl('authSubtitle');
+  const authSubmitBtn = getEl('authSubmitBtn');
+
+  let isSignUpMode = false;
+
+  if (signinForm) {
+    signinForm.addEventListener('submit', e => {
+      e.preventDefault();
+      clearAuthError();
+      const username = getEl('signinName');
+      const password = getEl('signinPassword');
+      if (isSignUpMode) {
+        signUp(username.value, password.value);
+      } else {
+        signIn(username.value, password.value);
+      }
+    });
+  }
+
+  if (authToggleBtn) {
+    authToggleBtn.addEventListener('click', () => {
+      isSignUpMode = !isSignUpMode;
+      if (authTitle) authTitle.textContent = isSignUpMode ? 'Create Account' : 'Welcome Back';
+      if (authSubtitle) authSubtitle.textContent = isSignUpMode ? 'Sign up to upload and share' : 'Sign in to upload, download, and follow';
+      if (authSubmitBtn) authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
+      if (authToggleBtn) authToggleBtn.textContent = isSignUpMode ? 'Sign In' : 'Sign Up';
+    });
+  }
+
+  // User menu
+  const userMenuTrigger = getEl('userMenuTrigger');
+  const userDropdown = getEl('userDropdown');
+  const adminMenuBtn = getEl('adminMenuBtn');
+  const signOutBtn = getEl('signOutBtn');
+  const viewProfileBtn = getEl('viewProfileBtn');
+
+  if (userMenuTrigger && userDropdown) {
+    userMenuTrigger.addEventListener('click', () => toggleClass(userDropdown, 'show'));
+    document.addEventListener('click', e => {
+      if (!userMenuTrigger.contains(e.target) && !userDropdown.contains(e.target)) {
+        removeClass(userDropdown, 'show');
+      }
+    });
+  }
+
+  if (adminMenuBtn) {
+    adminMenuBtn.addEventListener('click', () => {
+      showModal('adminModal');
+      if (userDropdown) removeClass(userDropdown, 'show');
+    });
+  }
+
+  if (signOutBtn) {
+    signOutBtn.addEventListener('click', () => {
+      signOut();
+      if (userDropdown) removeClass(userDropdown, 'show');
+    });
+  }
+
+  if (viewProfileBtn) {
+    viewProfileBtn.addEventListener('click', () => {
+      if (currentUser) showCreatorModal(currentUser.name);
+      if (userDropdown) removeClass(userDropdown, 'show');
+    });
+  }
+
+  // Admin panel
+  const adminPostAnnouncementBtn = getEl('adminPostAnnouncementBtn');
+  const adminMaintenanceToggle = getEl('adminMaintenanceToggle');
+
+  if (adminPostAnnouncementBtn) {
+    adminPostAnnouncementBtn.addEventListener('click', postAnnouncement);
+  }
+
+  if (adminMaintenanceToggle) {
+    adminMaintenanceToggle.addEventListener('click', toggleMaintenance);
+  }
+
+  // Asset modal delete button
+  const modalDeleteBtn = getEl('modalDeleteBtn');
+  if (modalDeleteBtn) {
+    modalDeleteBtn.addEventListener('click', () => {
+      const modal = getEl('assetModal');
+      if (modal && modal.getAttribute('data-asset-id')) {
+        deleteAsset(modal.getAttribute('data-asset-id'));
+      }
+    });
+  }
+
+  // Page navigation
+  document.querySelectorAll('.nav-link').forEach(link => {
+    link.addEventListener('click', e => {
+      e.preventDefault();
+      const pageName = link.getAttribute('data-page');
+      document.querySelectorAll('.page').forEach(p => removeClass(p, 'active'));
+      document.querySelectorAll('.nav-link').forEach(l => removeClass(l, 'active'));
+      const page = getEl('page-' + pageName);
+      if (page) addClass(page, 'active');
+      addClass(link, 'active');
+    });
+  });
+
+  // Category pills
+  document.querySelectorAll('.cat-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      document.querySelectorAll('.cat-pill').forEach(p => removeClass(p, 'active'));
+      addClass(pill, 'active');
+      // Filter logic can be added here
+    });
+  });
+
+  // Announcement close
+  const announcementClose = getEl('announcementClose');
+  const announcementBanner = getEl('announcementBanner');
+  if (announcementClose) {
+    announcementClose.addEventListener('click', () => addClass(announcementBanner, 'hidden'));
+  }
+
+  // Upload buttons in empty states
+  document.querySelectorAll('#emptyUploadBtn, .sounds-upload-btn, .creators-upload-btn').forEach(btn => {
+    btn.addEventListener('click', () => showModal('uploadModal'));
+  });
+
+  // Custom select for category
+  const assetCategoryWrap = getEl('assetCategoryWrap');
+  const assetCategoryTrigger = getEl('assetCategoryTrigger');
+  const assetCategoryDropdown = getEl('assetCategoryDropdown');
+  const assetCategoryLabel = getEl('assetCategoryLabel');
+  const assetCategory = getEl('assetCategory');
+
+  if (assetCategoryTrigger && assetCategoryDropdown) {
+    assetCategoryTrigger.addEventListener('click', e => {
+      e.preventDefault();
+      toggleClass(assetCategoryDropdown, 'show');
     });
 
-    document.querySelectorAll('.sound-cat-pill').forEach(pill => {
-      pill.addEventListener('click', () => {
-        document.querySelectorAll('.sound-cat-pill').forEach(p => p.classList.remove('active'));
-        pill.classList.add('active');
-        currentSoundCat = pill.dataset.scat;
-        renderSounds();
+    assetCategoryDropdown.querySelectorAll('.custom-select-option').forEach(option => {
+      option.addEventListener('click', e => {
+        e.preventDefault();
+        const value = option.getAttribute('data-value');
+        if (assetCategoryLabel) {
+          assetCategoryLabel.textContent = option.textContent;
+          assetCategoryLabel.classList.remove('placeholder');
+        }
+        if (assetCategory) assetCategory.value = value;
+        removeClass(assetCategoryDropdown, 'show');
       });
     });
 
-    // Sort selects
-    document.getElementById('sortSelect').addEventListener('change', e => {
-      currentSort = e.target.value;
-      renderAssets();
-    });
-    document.getElementById('soundsSortSelect').addEventListener('change', e => {
-      currentSoundsSort = e.target.value;
-      renderSounds();
-    });
-    document.getElementById('creatorsSortSelect').addEventListener('change', e => {
-      currentCreatorsSort = e.target.value;
-      renderCreators();
-    });
-
-    // Search
-    document.getElementById('searchInput').addEventListener('input', e => {
-      currentSearch = e.target.value;
-      renderAssets();
-    });
-    document.getElementById('soundsSearchInput').addEventListener('input', e => {
-      currentSoundsSearch = e.target.value;
-      renderSounds();
-    });
-    document.getElementById('creatorsSearchInput').addEventListener('input', e => {
-      currentCreatorsSearch = e.target.value;
-      renderCreators();
-    });
-
-    // ============================================================
-    //  TOAST
-    // ============================================================
-    let toastTimer;
-    function showToast(msg) {
-      const t = document.getElementById('toast');
-      t.textContent = msg;
-      t.classList.add('show');
-      clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
-    }
-
-    // ============================================================
-    //  BOOTSTRAP
-    // ============================================================
-    (function boot() {
-      // Restore session
-      const session = getSession();
-      if (session) {
-        currentUser = session;
-        updateUserUI();
+    document.addEventListener('click', e => {
+      if (!assetCategoryWrap.contains(e.target)) {
+        removeClass(assetCategoryDropdown, 'show');
       }
+    });
+  }
 
-      // Start listening to shared asset collection (Firestore or localStorage fallback)
-      subscribeToAssets();
+  // Store asset ID in modal for deletion
+  window.addEventListener('showAssetModal', e => {
+    const modal = getEl('assetModal');
+    if (modal) modal.setAttribute('data-asset-id', e.detail.assetId);
+  });
+});
 
-      // Start listening to admin settings — maintenance + announcements shown to ALL visitors
-      subscribeToAdminSettings();
-    })();
+function updateFilePreview(file) {
+  const preview = getEl('filePreview');
+  const img = getEl('filePreviewImg');
+  const name = getEl('filePreviewName');
 
-  </script>
-</body>
-</html>
+  if (!preview) return;
+
+  if (file.type.startsWith('image/')) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      if (img) img.src = e.target.result;
+      preview.style.display = 'flex';
+    };
+    reader.readAsDataURL(file);
+  } else {
+    if (img) img.style.display = 'none';
+    preview.style.display = 'flex';
+  }
+
+  if (name) name.textContent = file.name;
+}
